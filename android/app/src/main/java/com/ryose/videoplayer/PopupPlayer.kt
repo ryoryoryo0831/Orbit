@@ -20,7 +20,7 @@ import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ProgressBar
 import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.util.VLCVideoLayout
+import org.videolan.libvlc.interfaces.IVLCVout
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -40,7 +40,13 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
 
     private var root: View? = null
     private lateinit var params: WindowManager.LayoutParams
-    private lateinit var videoLayout: VLCVideoLayout
+    private lateinit var videoFrame: View
+    /** 小窓の大きさが変わったら、映像を描く大きさを VLC に伝え直す */
+    private val videoSizeListener = View.OnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+        if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) setVoutSize(v.width, v.height)
+    }
+    /** VLC が映像の大きさを知らせてくる（使わないが、受け取り口が要る） */
+    private val voutLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, _, _, _, _, _, _ -> }
     private lateinit var controls: View
     private lateinit var playButton: ImageButton
     private lateinit var prevButton: View
@@ -63,7 +69,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         if (root != null) return true
         if (!Settings.canDrawOverlays(service)) return false
         val view = LayoutInflater.from(ctx).inflate(R.layout.popup_player, null)
-        videoLayout = view.findViewById(R.id.popupVideo)
+        videoFrame = view.findViewById(R.id.popupVideo)
         controls = view.findViewById(R.id.popupControls)
         playButton = view.findViewById(R.id.popupPlay)
         prevButton = view.findViewById(R.id.popupPrev)
@@ -89,7 +95,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
             w, h,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             // 画面の外にはみ出せるようにして、端に寄せられるようにする。
-            // 映像を TextureView で描くので、ハードウェアでの描画を有効にする（サービスから出す窓は自動では有効にならない）
+            // ハードウェアでの描画を有効にする（サービスから出す窓は自動では有効にならない）
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT,
@@ -106,11 +112,23 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         root = view
         view.keepScreenOn = service.isPlaying
 
-        // 映像は窓の中に直接描く（TextureView）。SurfaceView だと窓に穴を開けてその下に映像を出すため、
-        // ほかのアプリの上に重ねる窓では、端末によって映像が映らずに透けてしまう
-        service.player.attachViews(videoLayout, null, true, true)
+        // 映像の出し先を VLC に直接つなぐ。VLCVideoLayout（player.attachViews）は、画面（Activity）の中でないと
+        // 描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさはここで自分で伝える
+        val vout = service.player.vlcVout
+        val subtitles = view.findViewById<android.view.SurfaceView>(R.id.popupSubtitles)
+        subtitles.setZOrderMediaOverlay(true)
+        subtitles.holder.setFormat(PixelFormat.TRANSLUCENT)
+        // 万一ほかの出し先がつながったままなら外す（つながったまま付けると VLC がエラーにする）
+        if (vout.areViewsAttached()) service.player.detachViews()
+        if (vout.areViewsAttached()) vout.detachViews()
+        vout.setVideoView(view.findViewById<android.view.SurfaceView>(R.id.popupSurface))
+        vout.setSubtitlesView(subtitles)
+        vout.attachViews(voutLayoutListener)
+        setVoutSize(w, h)
+        videoFrame.addOnLayoutChangeListener(videoSizeListener)
         // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
-        service.player.setVideoScale(MediaPlayer.ScaleType.SURFACE_BEST_FIT)
+        service.player.setAspectRatio(null)
+        service.player.setScale(0f)
         service.videoUiAttached = true
         service.addListener(this)
         service.restoreVideo()
@@ -130,7 +148,8 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         savePlacement()
         // 映像の出し先が無くなるので映像を止めておく（全画面に戻ったら、そちらで戻す）
         runCatching { service.setVideoEnabled(false) }
-        service.player.detachViews()
+        videoFrame.removeOnLayoutChangeListener(videoSizeListener)
+        runCatching { service.player.vlcVout.detachViews() }
         service.videoUiAttached = false
         runCatching { wm.removeView(view) }
     }
@@ -380,6 +399,10 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private fun savePlacement() {
         if (!::params.isInitialized) return
         AppSettings.setPopupPlacement(service, (size / density).roundToInt(), params.x, params.y)
+    }
+
+    private fun setVoutSize(width: Int, height: Int) {
+        if (width > 0 && height > 0) runCatching { service.player.vlcVout.setWindowSize(width, height) }
     }
 
     private fun minSize() = (PopupGeometry.MIN_SIZE_DP * density).roundToInt()

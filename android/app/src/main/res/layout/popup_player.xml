@@ -5,10 +5,25 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <org.videolan.libvlc.util.VLCVideoLayout
+    <!--
+        映像と字幕を描く場所。libVLC の VLCVideoLayout は、画面（Activity）の中でないと
+        描く大きさを VLC に伝えないので、小窓では自分で伝える（PopupPlayer.kt）
+    -->
+    <FrameLayout
         android:id="@+id/popupVideo"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent">
+
+        <SurfaceView
+            android:id="@+id/popupSurface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <SurfaceView
+            android:id="@+id/popupSubtitles"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <!-- タップ・ドラッグ（移動）・ピンチ（大きさ）を受け取る透明なレイヤー -->
     <View
