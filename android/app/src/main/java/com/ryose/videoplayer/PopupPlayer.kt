@@ -47,6 +47,23 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     }
     /** VLC が映像の大きさを知らせてくる（使わないが、受け取り口が要る） */
     private val voutLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, _, _, _, _, _, _ -> }
+
+    /**
+     * 映像の出し先（SurfaceView）の準備ができたら、映像を出す。
+     * 準備ができる前に映像を出すように頼むと、VLC は「出し先が無い」として映像を出すのをあきらめ、
+     * あとで出し先ができてもやり直さない（libVLC の android/display.c と MediaPlayer の作り）。
+     * 新しく作った窓の出し先はすぐには準備できないので、小窓では映像が映らなかった
+     */
+    private val surfacesCallback = object : IVLCVout.Callback {
+        override fun onSurfacesCreated(vlcVout: IVLCVout) {
+            if (root == null) return
+            // いったん映像を止めてから出し直す（準備前に頼んで失敗していても、ここで出し直される）
+            service.setVideoEnabled(false)
+            service.restoreVideo()
+        }
+
+        override fun onSurfacesDestroyed(vlcVout: IVLCVout) {}
+    }
     private lateinit var controls: View
     private lateinit var playButton: ImageButton
     private lateinit var prevButton: View
@@ -123,6 +140,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         if (vout.areViewsAttached()) vout.detachViews()
         vout.setVideoView(view.findViewById<android.view.SurfaceView>(R.id.popupSurface))
         vout.setSubtitlesView(subtitles)
+        vout.addCallback(surfacesCallback)
         vout.attachViews(voutLayoutListener)
         setVoutSize(w, h)
         videoFrame.addOnLayoutChangeListener(videoSizeListener)
@@ -131,7 +149,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         service.player.setScale(0f)
         service.videoUiAttached = true
         service.addListener(this)
-        service.restoreVideo()
+        // 映像は、出し先の準備ができたとき（surfacesCallback）に出す
         updateButtons()
         updatePlay()
         updateProgress()
@@ -149,6 +167,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         // 映像の出し先が無くなるので映像を止めておく（全画面に戻ったら、そちらで戻す）
         runCatching { service.setVideoEnabled(false) }
         videoFrame.removeOnLayoutChangeListener(videoSizeListener)
+        runCatching { service.player.vlcVout.removeCallback(surfacesCallback) }
         runCatching { service.player.vlcVout.detachViews() }
         service.videoUiAttached = false
         runCatching { wm.removeView(view) }
