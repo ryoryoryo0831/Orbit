@@ -88,8 +88,10 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         params = WindowManager.LayoutParams(
             w, h,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // 画面の外にはみ出せるようにして、端に寄せられるようにする
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            // 画面の外にはみ出せるようにして、端に寄せられるようにする。
+            // 映像を TextureView で描くので、ハードウェアでの描画を有効にする（サービスから出す窓は自動では有効にならない）
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -104,7 +106,11 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         root = view
         view.keepScreenOn = service.isPlaying
 
-        service.player.attachViews(videoLayout, null, true, false)
+        // 映像は窓の中に直接描く（TextureView）。SurfaceView だと窓に穴を開けてその下に映像を出すため、
+        // ほかのアプリの上に重ねる窓では、端末によって映像が映らずに透けてしまう
+        service.player.attachViews(videoLayout, null, true, true)
+        // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
+        service.player.setVideoScale(MediaPlayer.ScaleType.SURFACE_BEST_FIT)
         service.videoUiAttached = true
         service.addListener(this)
         service.restoreVideo()
