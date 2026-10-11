@@ -94,12 +94,30 @@
             android:textColor="@color/text_muted"
             android:textSize="15sp" />
 
-        <SeekBar
-            android:id="@+id/seekBar"
+        <!-- A-B リピートの操作（メニューから開いたとき・使っているときだけ出す） -->
+        <include
+            layout="@layout/view_ab_repeat"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:paddingVertical="12dp" />
+            android:layout_marginTop="16dp" />
+
+        <!-- A-B リピートの区間はシークバーの後ろに描く -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp">
+
+            <com.ryose.videoplayer.AbRangeView
+                android:id="@+id/abRange"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <SeekBar
+                android:id="@+id/seekBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="12dp" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

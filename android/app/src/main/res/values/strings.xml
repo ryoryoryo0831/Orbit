@@ -79,4 +79,12 @@
     <string name="player_restart">最初から再生</string>
     <string name="player_now_playing">再生中</string>
     <string name="player_time_zero" translatable="false">0:00</string>
+    <!-- A-B リピートの操作パネル -->
+    <string name="ab_set_a">A を設定</string>
+    <string name="ab_set_b">B を設定</string>
+    <string name="ab_a_earlier">A を 0.5 秒前へ</string>
+    <string name="ab_a_later">A を 0.5 秒後ろへ</string>
+    <string name="ab_b_earlier">B を 0.5 秒前へ</string>
+    <string name="ab_b_later">B を 0.5 秒後ろへ</string>
+    <string name="ab_close">A-Bリピートを解除して閉じる</string>
 </resources>

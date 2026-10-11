@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A-B リピートの操作パネル（動画・音楽の再生画面で共通。AbRepeatBar が動かす）。
+  [−][A][＋]  [−][B][＋]  [✕]
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/abPanel"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="4dp"
+    android:visibility="gone">
+
+    <ImageButton
+        android:id="@+id/abAMinus"
+        style="@style/AbNudgeButton"
+        android:contentDescription="@string/ab_a_earlier"
+        android:src="@drawable/ic_remove" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/abA"
+        style="@style/AbPointButton"
+        android:text="@string/ab_set_a" />
+
+    <ImageButton
+        android:id="@+id/abAPlus"
+        style="@style/AbNudgeButton"
+        android:contentDescription="@string/ab_a_later"
+        android:src="@drawable/ic_add" />
+
+    <Space
+        android:layout_width="8dp"
+        android:layout_height="1dp" />
+
+    <ImageButton
+        android:id="@+id/abBMinus"
+        style="@style/AbNudgeButton"
+        android:contentDescription="@string/ab_b_earlier"
+        android:src="@drawable/ic_remove" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/abB"
+        style="@style/AbPointButton"
+        android:text="@string/ab_set_b" />
+
+    <ImageButton
+        android:id="@+id/abBPlus"
+        style="@style/AbNudgeButton"
+        android:contentDescription="@string/ab_b_later"
+        android:src="@drawable/ic_add" />
+
+    <ImageButton
+        android:id="@+id/abClose"
+        style="@style/AbNudgeButton"
+        android:layout_marginStart="4dp"
+        android:contentDescription="@string/ab_close"
+        android:src="@drawable/ic_close"
+        app:tint="?attr/colorOnSurfaceVariant" />
+</LinearLayout>

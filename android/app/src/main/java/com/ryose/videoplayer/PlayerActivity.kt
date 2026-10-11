@@ -87,7 +87,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var speedButton: TextView
     private lateinit var repeatButton: ImageButton
     private lateinit var unlockButton: ImageButton
-    private lateinit var abIndicator: TextView
+    private lateinit var abBar: AbRepeatBar
     private lateinit var castButton: ImageButton
     private lateinit var castInfo: TextView
     private lateinit var gestureInfo: TextView
@@ -294,6 +294,12 @@ class PlayerActivity : AppCompatActivity() {
         centerControls = findViewById(R.id.centerControls)
         titleView = findViewById(R.id.titleView)
         seekBar = findViewById(R.id.seekBar)
+        abBar = AbRepeatBar(
+            findViewById(R.id.abPanel),
+            findViewById<AbRangeView>(R.id.abRange).also { it.seekBar = seekBar },
+            onMessage = { showInfo(it) },
+            onUsed = { scheduleHide() },
+        )
         timeCurrent = findViewById(R.id.timeCurrent)
         timeDuration = findViewById(R.id.timeDuration)
         playButton = findViewById(R.id.playButton)
@@ -301,13 +307,8 @@ class PlayerActivity : AppCompatActivity() {
         speedButton = findViewById(R.id.speedButton)
         repeatButton = findViewById(R.id.repeatButton)
         unlockButton = findViewById(R.id.unlockButton)
-        abIndicator = findViewById(R.id.abIndicator)
         castButton = findViewById(R.id.castButton)
         castInfo = findViewById(R.id.castInfo)
-        abIndicator.setOnClickListener {
-            svc?.clearAb()
-            showInfo("A-Bリピートを解除しました")
-        }
         gestureInfo = findViewById(R.id.gestureInfo)
         restartButton = findViewById(R.id.restartButton)
         seekPreview = findViewById(R.id.seekPreview)
@@ -372,6 +373,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun onServiceReady(s: PlaybackService) {
         svc = s
+        abBar.svc = s
+        abBar.refresh()
         s.addListener(listener)
         // ネットワーク再生でログインや証明書の確認を求められたときにダイアログを出す
         s.setDialogCallbacks(dialogHandler)
@@ -520,6 +523,7 @@ class PlayerActivity : AppCompatActivity() {
         svc?.removeListener(listener)
         connection.unbind()
         svc = null
+        abBar.svc = null
     }
 
     override fun onDestroy() {
@@ -640,6 +644,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateItem() {
         val s = svc ?: return
+        // 曲・動画が変わると A-B リピートは解除される
+        abBar.refresh()
         titleView.text = s.displayTitle()
         val key = s.currentItem?.key
         if (key != shownItemKey) {
@@ -677,9 +683,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
             ),
         )
-        val ab = s.abLabel()
-        abIndicator.text = ab
-        abIndicator.visibility = if (ab != null) View.VISIBLE else View.GONE
+        abBar.refresh()
         val cast = s.renderer
         castButton.setImageResource(if (cast != null) R.drawable.ic_cast_connected else R.drawable.ic_cast)
         castInfo.visibility = if (cast != null) View.VISIBLE else View.GONE
@@ -692,6 +696,7 @@ class PlayerActivity : AppCompatActivity() {
         lengthMs = ms
         seekBar.max = ms.toInt()
         timeDuration.text = formatTime(ms)
+        abBar.refresh()
     }
 
     private fun onVideoReady() {
@@ -917,9 +922,7 @@ class PlayerActivity : AppCompatActivity() {
                 s.toggleShuffle()
                 showInfo(if (s.shuffle) "シャッフル：オン" else "シャッフル：オフ")
             })
-            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel(), active = s.abLabel() != null) {
-                showInfo(s.abStep())
-            })
+            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel(), active = s.abLabel() != null) { openAbRepeat() })
             add(SheetItem(R.drawable.ic_timer, "スリープ", PlayerDialogs.sleepShortLabel(s), active = sleep != null) {
                 PlayerDialogs.showSleepTimer(this@PlayerActivity, s)
             })
@@ -946,6 +949,13 @@ class PlayerActivity : AppCompatActivity() {
             add(SheetItem(R.drawable.ic_settings, "設定") { startActivity(Intent(this@PlayerActivity, SettingsActivity::class.java)) })
         }
         ActionSheet.show(this, s.displayTitle(), items, tiles = tiles)
+    }
+
+    /** A-B リピートの操作パネルを、シークバーの上に出す */
+    private fun openAbRepeat() {
+        abBar.openPanel()
+        showControls()
+        if ((svc?.abA ?: -1) < 0) showInfo("くり返したい区間の始めで「A」、終わりで「B」を押してください")
     }
 
     /** 小窓のメニュー（自由な小窓・OS の小窓・画面を離れたときの動き） */
@@ -1389,6 +1399,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun scheduleHide() {
         handler.removeCallbacks(hideControlsTask)
         if (!controlsVisible || userSeeking || svc?.isPlaying != true) return
+        // A-B リピートの A・B を決めている途中は隠さない（B を押したいときにボタンが消えていないように）
+        if (abBar.open && svc?.let { it.abA < 0 || it.abB < 0 } == true) return
         // TalkBack で操作している間は自動で隠さない（ボタンを探している間に消えないように）
         if (a11y?.isTouchExplorationEnabled == true) return
         // 「操作の時間」のユーザー補助設定があれば、その長さだけ出しておく

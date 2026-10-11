@@ -950,27 +950,62 @@ class PlaybackService : Service() {
     var abB = -1L
         private set
 
-    /** 1回目で A、2回目で B を今の位置に設定し、3回目で解除する。結果を文章で返す */
-    fun abStep(): String {
+    /** A と B の最小の間隔（ミリ秒） */
+    private val abMinGapMs = 500L
+
+    /** A を今の位置にする。B より後になったら B は外す。結果を文章で返す */
+    fun setAbA(): String {
         val t = player.time.coerceAtLeast(0)
-        val msg = when {
-            abA < 0 -> {
-                abA = t
-                "A-Bリピート：A を ${formatTime(t)} に設定（もう一度で B）"
-            }
-            abB < 0 && t > abA + 500 -> {
-                abB = t
-                player.setTime(abA)
-                "A-Bリピート：${formatTime(abA)} 〜 ${formatTime(t)} をくり返します"
-            }
-            abB < 0 -> "B は A（${formatTime(abA)}）より後の位置で設定してください"
-            else -> {
-                clearAb()
-                return "A-Bリピートを解除しました"
-            }
+        abA = t
+        val msg = if (abB >= 0 && abB <= t + abMinGapMs) {
+            abB = -1
+            "A を ${formatAbTime(t)} にしました（B は A より後にもう一度決めてください）"
+        } else if (abB > abA) {
+            "A を ${formatAbTime(t)} にしました"
+        } else {
+            "A を ${formatAbTime(t)} にしました。終わりの位置で B を押してください"
         }
         dispatch { it.onModesChanged() }
         return msg
+    }
+
+    /** B を今の位置にして、A に戻ってくり返しを始める。A が無い・A より前なら設定しない。結果を文章で返す */
+    fun setAbB(): String {
+        val t = player.time.coerceAtLeast(0)
+        return when {
+            abA < 0 -> "先に、くり返しの始めの位置で A を押してください"
+            t <= abA + abMinGapMs -> "B は A（${formatAbTime(abA)}）より後の位置で押してください"
+            else -> {
+                abB = t
+                player.setTime(abA)
+                dispatch { it.onModesChanged() }
+                "${formatAbTime(abA)} 〜 ${formatAbTime(t)} をくり返します"
+            }
+        }
+    }
+
+    /**
+     * A か B を少しずらす（[deltaMs] がマイナスなら前へ）。ずらしたところが聞けるように、
+     * A ならその位置から、B ならその 2 秒前から再生する。ずらせないときは null
+     */
+    fun nudgeAb(isA: Boolean, deltaMs: Long): String? {
+        val len = lengthMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+        if (isA) {
+            if (abA < 0) return null
+            val max = if (abB >= 0) abB - abMinGapMs else len
+            val v = maxOf(0L, minOf(abA + deltaMs, max))
+            if (v == abA) return null
+            abA = v
+            player.setTime(abA)
+        } else {
+            if (abB < 0) return null
+            val v = maxOf(abA + abMinGapMs, minOf(abB + deltaMs, len))
+            if (v == abB) return null
+            abB = v
+            player.setTime(maxOf(abA, abB - 2000))
+        }
+        dispatch { it.onModesChanged() }
+        return if (isA) "A：${formatAbTime(abA)}" else "B：${formatAbTime(abB)}"
     }
 
     fun clearAb() {
@@ -979,9 +1014,10 @@ class PlaybackService : Service() {
         dispatch { it.onModesChanged() }
     }
 
+    /** メニューのマス目に出す短い表示（「1:23〜2:45」「A 1:23」）。使っていなければ null */
     fun abLabel(): String? = when {
-        abA >= 0 && abB > abA -> "A-B"
-        abA >= 0 -> "A-"
+        abA >= 0 && abB > abA -> "${formatTime(abA)}〜${formatTime(abB)}"
+        abA >= 0 -> "A ${formatTime(abA)}"
         else -> null
     }
 

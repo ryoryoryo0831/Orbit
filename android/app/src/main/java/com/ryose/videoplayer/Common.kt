@@ -241,6 +241,9 @@ fun Context.hasStorageAccess(): Boolean =
 /** 再生速度の表示（1x・1.25x・0.5x など） */
 fun formatRate(r: Float): String = "%.2f".format(java.util.Locale.US, r).trimEnd('0').trimEnd('.') + "x"
 
+/** A-B リピートの位置の表示（0.1 秒まで。例：1:23.4） */
+fun formatAbTime(ms: Long): String = formatTime(ms) + "." + (ms.coerceAtLeast(0) % 1000 / 100)
+
 fun formatTime(ms: Long): String {
     val total = (ms.coerceAtLeast(0) / 1000)
     val h = total / 3600

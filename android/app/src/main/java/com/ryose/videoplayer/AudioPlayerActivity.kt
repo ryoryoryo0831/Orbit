@@ -31,6 +31,7 @@ class AudioPlayerActivity : AppCompatActivity() {
     private lateinit var titleView: TextView
     private lateinit var subtitleView: TextView
     private lateinit var seekBar: SeekBar
+    private lateinit var abBar: AbRepeatBar
     private lateinit var timeCurrent: TextView
     private lateinit var timeDuration: TextView
     private lateinit var playButton: ImageButton
@@ -83,6 +84,11 @@ class AudioPlayerActivity : AppCompatActivity() {
         titleView = findViewById(R.id.title)
         subtitleView = findViewById(R.id.subtitle)
         seekBar = findViewById(R.id.seekBar)
+        abBar = AbRepeatBar(
+            findViewById(R.id.abPanel),
+            findViewById<AbRangeView>(R.id.abRange).also { it.seekBar = seekBar },
+            onMessage = { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() },
+        )
         timeCurrent = findViewById(R.id.timeCurrent)
         timeDuration = findViewById(R.id.timeDuration)
         playButton = findViewById(R.id.playButton)
@@ -177,10 +183,13 @@ class AudioPlayerActivity : AppCompatActivity() {
         svc?.removeListener(listener)
         connection.unbind()
         svc = null
+        abBar.svc = null
     }
 
     private fun onServiceReady(s: PlaybackService) {
         svc = s
+        abBar.svc = s
+        abBar.refresh()
         s.addListener(listener)
         // ネットワーク再生でログインや証明書の確認を求められたときにダイアログを出す
         s.setDialogCallbacks(dialogHandler)
@@ -229,10 +238,13 @@ class AudioPlayerActivity : AppCompatActivity() {
         lengthMs = ms
         seekBar.max = ms.toInt()
         timeDuration.text = formatTime(ms)
+        abBar.refresh()
     }
 
     private fun updateItem() {
         val s = svc ?: return
+        // 曲・動画が変わると A-B リピートは解除される
+        abBar.refresh()
         val item = s.currentItem ?: return
         titleView.text = s.displayTitle()
         subtitleView.text = s.displaySubtitle()
@@ -270,6 +282,7 @@ class AudioPlayerActivity : AppCompatActivity() {
 
     private fun updateModes() {
         val s = svc ?: return
+        abBar.refresh()
         tint(shuffleButton, s.shuffle)
         repeatButton.setImageResource(if (s.repeat == PlaybackService.Repeat.ONE) R.drawable.ic_repeat_one else R.drawable.ic_repeat)
         tint(repeatButton, s.repeat != PlaybackService.Repeat.OFF)
@@ -305,7 +318,8 @@ class AudioPlayerActivity : AppCompatActivity() {
                 PlayerDialogs.showSleepTimer(this@AudioPlayerActivity, s)
             })
             add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel(), active = s.abLabel() != null) {
-                Toast.makeText(this@AudioPlayerActivity, s.abStep(), Toast.LENGTH_SHORT).show()
+                abBar.openPanel()
+                if (s.abA < 0) Toast.makeText(this@AudioPlayerActivity, "くり返したい区間の始めで「A」、終わりで「B」を押してください", Toast.LENGTH_LONG).show()
             })
             if (chapters.isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${chapters.size} 個") {
                 val current = s.player.chapter

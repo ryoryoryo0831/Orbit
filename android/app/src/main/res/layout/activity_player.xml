@@ -67,20 +67,6 @@
             android:textSize="17sp"
             android:textStyle="bold" />
 
-        <!-- A-Bリピート中の表示（タップで解除） -->
-        <TextView
-            android:id="@+id/abIndicator"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginHorizontal="4dp"
-            android:background="@drawable/bg_ab_badge"
-            android:gravity="center"
-            android:paddingHorizontal="10dp"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
-
         <ImageButton
             android:id="@+id/castButton"
             style="@style/PlayerButton"
@@ -155,6 +141,9 @@
         android:paddingTop="32dp"
         android:paddingBottom="8dp">
 
+        <!-- A-B リピートの操作（メニューから開いたとき・使っているときだけ出す） -->
+        <include layout="@layout/view_ab_repeat" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -166,15 +155,26 @@
                 style="@style/PlayerTime"
                 android:text="@string/player_time_zero" />
 
-            <!-- 押しやすいように高さは 48dp（線の太さ・見た目は変えない） -->
-            <SeekBar
-                android:id="@+id/seekBar"
+            <!-- A-B リピートの区間はシークバーの後ろに描く -->
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_weight="1"
-                android:minHeight="6dp"
-                android:maxHeight="6dp"
-                android:paddingVertical="16dp" />
+                android:layout_weight="1">
+
+                <com.ryose.videoplayer.AbRangeView
+                    android:id="@+id/abRange"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <!-- 押しやすいように高さは 48dp（線の太さ・見た目は変えない） -->
+                <SeekBar
+                    android:id="@+id/seekBar"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:minHeight="6dp"
+                    android:maxHeight="6dp"
+                    android:paddingVertical="16dp" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/timeDuration"
