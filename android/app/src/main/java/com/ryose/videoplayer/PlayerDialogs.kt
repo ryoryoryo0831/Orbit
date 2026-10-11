@@ -180,12 +180,15 @@ object PlayerDialogs {
                 item.title,
                 if (current) "再生中" else item.durationMs.takeIf { it > 0 }?.let { formatTime(it) },
                 active = current,
-                menu = {
-                    showQueueItemMenu(context, svc, pos, onPlay = { sheet?.dismiss() }) { newPos ->
-                        sheet?.dismiss()
-                        showQueue(context, svc, newPos)
+                // 1 曲だけ（今の曲だけ）のときは、並べ替えも外すこともできないので︙を出さない
+                menu = if (order.size > 1) {
+                    {
+                        showQueueItemMenu(context, svc, pos, onPlay = { sheet?.dismiss() }) { newPos ->
+                            sheet?.dismiss()
+                            showQueue(context, svc, newPos)
+                        }
                     }
-                },
+                } else null,
             ) { if (!current) svc.playAt(pos) }
         }
         sheet = ActionSheet.show(
