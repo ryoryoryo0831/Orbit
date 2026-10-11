@@ -1,7 +1,6 @@
 package com.ryose.videoplayer
 
 import android.content.ActivityNotFoundException
-import android.graphics.Color
 import android.os.Bundle
 import android.text.Spannable
 import android.text.method.LinkMovementMethod
@@ -9,8 +8,6 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -24,10 +21,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
+        enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))

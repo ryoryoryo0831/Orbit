@@ -34,6 +34,8 @@
         <item name="colorOnSurfaceInverse">@color/role_inverse_on_surface</item>
         <item name="colorOutline">@color/role_outline</item>
         <item name="colorOutlineVariant">@color/role_outline_variant</item>
+        <!-- シークバーなど昔ながらの部品の色（初期値は colorSecondary の灰色）。アクセントの青にする -->
+        <item name="colorControlActivated">@color/accent</item>
     </style>
 
     <!-- 起動中の画面（Android 12 以降のスプラッシュ画面。古い端末でも同じ見た目にする） -->
@@ -45,12 +47,45 @@
         <item name="postSplashScreenTheme">@style/Theme.VideoPlayer</item>
     </style>
 
-    <!-- 動画の再生画面は、テーマの設定にかかわらずいつも暗い -->
+    <!--
+      動画の再生画面は、テーマの設定にかかわらずいつも暗い。
+      色は一覧の暗いテーマと同じ（values/colors.xml の dark_*）。指定しない色は Material 3 の初期値（紫）に
+      なってしまう（シークバーは colorSecondary、︙メニューの背景は colorSurfaceContainerLow を使う）ので全部決める
+    -->
     <style name="Theme.VideoPlayer.Player" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">#4F8CFF</item>
+        <item name="colorPrimary">@color/dark_accent</item>
+        <!-- 再生ボタンなどの塗りつぶしのボタンの文字は、ほかの画面と違って白のまま -->
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:colorBackground">#0F1115</item>
-        <item name="colorSurface">#181B22</item>
+        <item name="colorPrimaryContainer">@color/dark_role_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/dark_role_on_primary_container</item>
+        <item name="colorPrimaryInverse">@color/dark_role_inverse_primary</item>
+        <item name="colorSecondary">@color/dark_role_secondary</item>
+        <item name="colorOnSecondary">@color/dark_role_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/dark_role_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/dark_role_on_secondary_container</item>
+        <item name="colorTertiary">@color/dark_role_tertiary</item>
+        <item name="colorOnTertiary">@color/dark_role_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/dark_role_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/dark_role_on_tertiary_container</item>
+        <item name="android:colorBackground">@color/dark_bg</item>
+        <item name="colorOnBackground">@color/dark_text_primary</item>
+        <item name="colorSurface">@color/dark_surface</item>
+        <item name="colorOnSurface">@color/dark_text_primary</item>
+        <item name="colorSurfaceVariant">@color/dark_card</item>
+        <item name="colorOnSurfaceVariant">@color/dark_text_muted</item>
+        <item name="colorSurfaceDim">@color/dark_role_surface_dim</item>
+        <item name="colorSurfaceBright">@color/dark_role_surface_bright</item>
+        <item name="colorSurfaceContainerLowest">@color/dark_role_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/dark_role_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/dark_role_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/dark_role_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/dark_role_surface_container_highest</item>
+        <item name="colorSurfaceInverse">@color/dark_role_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/dark_role_inverse_on_surface</item>
+        <item name="colorOutline">@color/dark_role_outline</item>
+        <item name="colorOutlineVariant">@color/dark_role_outline_variant</item>
+        <!-- シークバーなど昔ながらの部品の色（初期値は colorSecondary）。アクセントの青にする -->
+        <item name="colorControlActivated">@color/dark_accent</item>
         <item name="android:windowBackground">@android:color/black</item>
         <!-- アイコンは白（明るさに関係なく見やすく） -->
         <item name="colorControlNormal">#FFFFFF</item>

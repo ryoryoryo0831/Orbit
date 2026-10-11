@@ -110,6 +110,10 @@ object ActionSheet {
         // 横向きでも全部見えるように、最初から全体を開く
         dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
         dialog.behavior.skipCollapsed = true
+        // メニューの背景（Material 3 の下から出るシートは colorSurfaceContainerLow）をナビゲーションバーの下まで見せる
+        dialog.clearNavigationBarScrim(
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, Color.BLACK)
+        )
         dialog.show()
     }
 }

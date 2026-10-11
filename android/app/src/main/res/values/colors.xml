@@ -37,4 +37,40 @@
     <color name="role_surface_container_highest">#E5E8EE</color>
     <color name="role_inverse_surface">#2E3138</color>
     <color name="role_inverse_on_surface">#EFF0F5</color>
+
+    <!--
+      暗いテーマの色。values-night/colors.xml はこれを参照する。
+      動画の再生画面はテーマの設定にかかわらずいつも暗いので、themes.xml の Theme.VideoPlayer.Player からも直接使う
+    -->
+    <color name="dark_accent">#4F8CFF</color>
+    <color name="dark_bg">#0F1115</color>
+    <color name="dark_surface">#181B22</color>
+    <color name="dark_card">#222631</color>
+    <color name="dark_card_alt">#2A2F3A</color>
+    <color name="dark_text_primary">#E8EAF0</color>
+    <color name="dark_text_muted">#8A91A0</color>
+    <color name="dark_accent_soft">#2E4F8CFF</color>
+    <color name="dark_role_on_primary">#001A41</color>
+    <color name="dark_role_primary_container">#1F4A99</color>
+    <color name="dark_role_on_primary_container">#D9E2FF</color>
+    <color name="dark_role_inverse_primary">#2F6FE8</color>
+    <color name="dark_role_secondary">#BEC6DC</color>
+    <color name="dark_role_on_secondary">#283041</color>
+    <color name="dark_role_secondary_container">#3E4759</color>
+    <color name="dark_role_on_secondary_container">#DAE2F9</color>
+    <color name="dark_role_tertiary">#80D5D4</color>
+    <color name="dark_role_on_tertiary">#003737</color>
+    <color name="dark_role_tertiary_container">#004F4F</color>
+    <color name="dark_role_on_tertiary_container">#9CF1F0</color>
+    <color name="dark_role_outline">#8A91A0</color>
+    <color name="dark_role_outline_variant">#3A3F4B</color>
+    <color name="dark_role_surface_dim">#0F1115</color>
+    <color name="dark_role_surface_bright">#353A44</color>
+    <color name="dark_role_surface_container_lowest">#0B0D10</color>
+    <color name="dark_role_surface_container_low">#15181E</color>
+    <color name="dark_role_surface_container">#1B1E25</color>
+    <color name="dark_role_surface_container_high">#22262E</color>
+    <color name="dark_role_surface_container_highest">#2C3039</color>
+    <color name="dark_role_inverse_surface">#E8EAF0</color>
+    <color name="dark_role_inverse_on_surface">#2E3138</color>
 </resources>

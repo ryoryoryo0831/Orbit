@@ -1,7 +1,6 @@
 package com.ryose.videoplayer
 
 import android.content.Intent
-import android.graphics.Color
 import android.media.AudioManager
 import android.os.Bundle
 import android.view.Gravity
@@ -12,8 +11,6 @@ import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -76,10 +73,7 @@ class AudioPlayerActivity : AppCompatActivity() {
     private val connection = PlaybackConnection(this, autoCreate = true, onConnected = ::onServiceReady, onDisconnected = { svc = null })
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
+        enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_audio_player)
         volumeControlStream = AudioManager.STREAM_MUSIC

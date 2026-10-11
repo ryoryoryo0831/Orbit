@@ -1,40 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 暗いテーマの色 -->
+<!-- 暗いテーマの色（値は values/colors.xml の dark_*） -->
 <resources>
-    <color name="accent">#4F8CFF</color>
-    <color name="bg">#0F1115</color>
-    <color name="surface">#181B22</color>
-    <color name="card">#222631</color>
-    <color name="card_alt">#2A2F3A</color>
-    <color name="text_primary">#E8EAF0</color>
-    <color name="text_muted">#8A91A0</color>
+    <color name="accent">@color/dark_accent</color>
+    <color name="bg">@color/dark_bg</color>
+    <color name="surface">@color/dark_surface</color>
+    <color name="card">@color/dark_card</color>
+    <color name="card_alt">@color/dark_card_alt</color>
+    <color name="text_primary">@color/dark_text_primary</color>
+    <color name="text_muted">@color/dark_text_muted</color>
     <!-- アイコンの丸い背景（アクセント色を薄く） -->
-    <color name="accent_soft">#2E4F8CFF</color>
+    <color name="accent_soft">@color/dark_accent_soft</color>
     <!--
       Material 3 の色の役割（明るいテーマの説明は values/colors.xml）。
       アクセントの青（#4F8CFF）の上の文字は、白だと見づらいので濃い紺にする
     -->
-    <color name="role_on_primary">#001A41</color>
-    <color name="role_primary_container">#1F4A99</color>
-    <color name="role_on_primary_container">#D9E2FF</color>
-    <color name="role_inverse_primary">#2F6FE8</color>
-    <color name="role_secondary">#BEC6DC</color>
-    <color name="role_on_secondary">#283041</color>
-    <color name="role_secondary_container">#3E4759</color>
-    <color name="role_on_secondary_container">#DAE2F9</color>
-    <color name="role_tertiary">#80D5D4</color>
-    <color name="role_on_tertiary">#003737</color>
-    <color name="role_tertiary_container">#004F4F</color>
-    <color name="role_on_tertiary_container">#9CF1F0</color>
-    <color name="role_outline">#8A91A0</color>
-    <color name="role_outline_variant">#3A3F4B</color>
-    <color name="role_surface_dim">#0F1115</color>
-    <color name="role_surface_bright">#353A44</color>
-    <color name="role_surface_container_lowest">#0B0D10</color>
-    <color name="role_surface_container_low">#15181E</color>
-    <color name="role_surface_container">#1B1E25</color>
-    <color name="role_surface_container_high">#22262E</color>
-    <color name="role_surface_container_highest">#2C3039</color>
-    <color name="role_inverse_surface">#E8EAF0</color>
-    <color name="role_inverse_on_surface">#2E3138</color>
+    <color name="role_on_primary">@color/dark_role_on_primary</color>
+    <color name="role_primary_container">@color/dark_role_primary_container</color>
+    <color name="role_on_primary_container">@color/dark_role_on_primary_container</color>
+    <color name="role_inverse_primary">@color/dark_role_inverse_primary</color>
+    <color name="role_secondary">@color/dark_role_secondary</color>
+    <color name="role_on_secondary">@color/dark_role_on_secondary</color>
+    <color name="role_secondary_container">@color/dark_role_secondary_container</color>
+    <color name="role_on_secondary_container">@color/dark_role_on_secondary_container</color>
+    <color name="role_tertiary">@color/dark_role_tertiary</color>
+    <color name="role_on_tertiary">@color/dark_role_on_tertiary</color>
+    <color name="role_tertiary_container">@color/dark_role_tertiary_container</color>
+    <color name="role_on_tertiary_container">@color/dark_role_on_tertiary_container</color>
+    <color name="role_outline">@color/dark_role_outline</color>
+    <color name="role_outline_variant">@color/dark_role_outline_variant</color>
+    <color name="role_surface_dim">@color/dark_role_surface_dim</color>
+    <color name="role_surface_bright">@color/dark_role_surface_bright</color>
+    <color name="role_surface_container_lowest">@color/dark_role_surface_container_lowest</color>
+    <color name="role_surface_container_low">@color/dark_role_surface_container_low</color>
+    <color name="role_surface_container">@color/dark_role_surface_container</color>
+    <color name="role_surface_container_high">@color/dark_role_surface_container_high</color>
+    <color name="role_surface_container_highest">@color/dark_role_surface_container_highest</color>
+    <color name="role_inverse_surface">@color/dark_role_inverse_surface</color>
+    <color name="role_inverse_on_surface">@color/dark_role_inverse_on_surface</color>
 </resources>
