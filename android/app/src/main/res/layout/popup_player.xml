@@ -118,4 +118,16 @@
             android:progressTint="@color/accent"
             android:progressBackgroundTint="#66FFFFFF" />
     </FrameLayout>
+
+    <!-- 映像を出せなかったときだけ、どこで止まったかを出す（不具合を調べるため） -->
+    <TextView
+        android:id="@+id/popupStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="4dp"
+        android:textColor="#FFFFFF"
+        android:textSize="10sp"
+        android:visibility="gone" />
 </FrameLayout>

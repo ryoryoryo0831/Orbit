@@ -48,6 +48,20 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     /** VLC が映像の大きさを知らせてくる（使わないが、受け取り口が要る） */
     private val voutLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, _, _, _, _, _, _ -> }
 
+    // 映像が出たかどうかの記録（出なかったときに、どこで止まったかを小窓に出す）
+    private var surfacesReady = false
+    private var voutShown = false
+    private lateinit var statusView: android.widget.TextView
+    private val checkVideoTask = Runnable {
+        if (root == null || voutShown || service.currentItem?.isAudio != false) return@Runnable
+        val p = service.player
+        statusView.text = "映像を出せませんでした\n出し先:" + (if (surfacesReady) "OK" else "未") +
+            " 大きさ:${params.width}x${params.height}" +
+            " トラック:${runCatching { p.videoTrack }.getOrDefault(-99)}/${runCatching { p.videoTracksCount }.getOrDefault(-1)}" +
+            " 再生中:${p.isPlaying}"
+        statusView.visibility = View.VISIBLE
+    }
+
     /**
      * 映像の出し先（SurfaceView）の準備ができたら、映像を出す。
      * 準備ができる前に映像を出すように頼むと、VLC は「出し先が無い」として映像を出すのをあきらめ、
@@ -57,6 +71,9 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private val surfacesCallback = object : IVLCVout.Callback {
         override fun onSurfacesCreated(vlcVout: IVLCVout) {
             if (root == null) return
+            surfacesReady = true
+            handler.removeCallbacks(checkVideoTask)
+            handler.postDelayed(checkVideoTask, 4000)
             // いったん映像を止めてから出し直す（準備前に頼んで失敗していても、ここで出し直される）
             service.setVideoEnabled(false)
             service.restoreVideo()
@@ -87,6 +104,9 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         if (!Settings.canDrawOverlays(service)) return false
         val view = LayoutInflater.from(ctx).inflate(R.layout.popup_player, null)
         videoFrame = view.findViewById(R.id.popupVideo)
+        statusView = view.findViewById(R.id.popupStatus)
+        surfacesReady = false
+        voutShown = false
         controls = view.findViewById(R.id.popupControls)
         playButton = view.findViewById(R.id.popupPlay)
         prevButton = view.findViewById(R.id.popupPrev)
@@ -195,6 +215,9 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
             }
             MediaPlayer.Event.LengthChanged, MediaPlayer.Event.TimeChanged -> updateProgress()
             MediaPlayer.Event.Vout -> if (e.voutCount > 0) {
+                voutShown = true
+                handler.removeCallbacks(checkVideoTask)
+                statusView.visibility = View.GONE
                 val a = currentAspect()
                 if (abs(a - aspect) > 0.01f) {
                     aspect = a
