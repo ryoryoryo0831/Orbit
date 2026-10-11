@@ -100,11 +100,11 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
-    <!-- 自由な小窓のボタン（小さな窓でも並ぶように小さめ） -->
+    <!-- 自由な小窓のボタン（指で押しやすい大きさ。窓が小さいときは数を減らして並べる） -->
     <style name="PopupButton">
-        <item name="android:layout_width">34dp</item>
-        <item name="android:layout_height">34dp</item>
-        <item name="android:padding">7dp</item>
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:padding">8dp</item>
         <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
         <item name="android:scaleType">fitCenter</item>
     </style>

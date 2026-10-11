@@ -108,8 +108,13 @@ class PlaylistActivity : AppCompatActivity() {
                     if (isFavorites) R.drawable.ic_star_border else R.drawable.ic_delete,
                     if (isFavorites) "お気に入りから外す" else "プレイリストから外す",
                 ) {
-                    store.setItems(playlistId, currentItems().filterIndexed { i, _ -> i != position })
+                    val before = currentItems()
+                    store.setItems(playlistId, before.filterIndexed { i, _ -> i != position })
                     load()
+                    showUndo(if (isFavorites) "お気に入りから外しました" else "プレイリストから外しました") {
+                        store.setItems(playlistId, before)
+                        load()
+                    }
                 },
                 SheetItem(R.drawable.ic_playlist_add, "ほかのプレイリストに追加") { PlaylistDialogs.addToPlaylist(this, listOf(item)) },
             ),

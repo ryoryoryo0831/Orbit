@@ -2,6 +2,7 @@ package com.ryose.videoplayer
 
 import android.Manifest
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -25,6 +26,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.navigation.NavigationBarView
+import coil.dispose
 import coil.load
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -206,16 +208,42 @@ class MainActivity : AppCompatActivity() {
         val key = item.key + (if (art != null) "#art" else "")
         if (key != miniArtKey) {
             miniArtKey = key
+            // 画像が無いときのアイコンは、枠いっぱいに引き伸ばさずに真ん中に出す
+            fun showIcon(res: Int) {
+                miniArt.dispose()
+                miniArt.scaleType = ImageView.ScaleType.CENTER
+                miniArt.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.text_muted))
+                miniArt.setImageResource(res)
+            }
+            fun showImage() {
+                miniArt.scaleType = ImageView.ScaleType.CENTER_CROP
+                miniArt.imageTintList = null
+            }
             when {
-                art != null -> miniArt.setImageBitmap(art)
-                item.isAudio -> miniArt.setImageResource(R.drawable.ic_music_note)
-                item.isNetwork -> miniArt.setImageResource(R.drawable.ic_movie)
-                else -> miniArt.load(VideoThumb(item.path, item.uri)) {
-                    placeholder(R.drawable.ic_movie)
-                    error(R.drawable.ic_movie)
+                art != null -> {
+                    miniArt.dispose()
+                    showImage()
+                    miniArt.setImageBitmap(art)
+                }
+                item.isAudio -> showIcon(R.drawable.ic_music_note)
+                item.isNetwork -> showIcon(R.drawable.ic_movie)
+                else -> {
+                    showIcon(R.drawable.ic_movie)
+                    miniArt.load(VideoThumb(item.path, item.uri)) {
+                        placeholder(R.drawable.ic_movie)
+                        error(R.drawable.ic_movie)
+                        listener(onSuccess = { _, _ -> showImage() })
+                    }
                 }
             }
         }
+    }
+
+    /** 「元に戻す」のお知らせを出す位置（ミニプレイヤーか下のタブの上。タブが左にある画面ではミニプレイヤーの上だけ） */
+    fun snackbarAnchor(): View? = when {
+        miniPlayer.visibility == View.VISIBLE -> miniPlayer
+        bottomNav is com.google.android.material.bottomnavigation.BottomNavigationView && bottomNav.visibility == View.VISIBLE -> bottomNav
+        else -> null
     }
 
     /** ミニプレイヤーの上の細いバー（再生位置） */

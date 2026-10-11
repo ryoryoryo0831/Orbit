@@ -41,6 +41,9 @@ class FavoriteFolders(context: Context) {
 
     fun remove(uri: Uri) = save(all().filterNot { it.uri == uri })
 
+    /** 一覧をまるごと戻す（お気に入りから外したあとの「元に戻す」で、元の順番のまま戻すため） */
+    fun restoreAll(list: List<Entry>) = save(list)
+
     fun rename(uri: Uri, title: String) = save(all().map { if (it.uri == uri) it.copy(title = title) else it })
 
     /** 追加・削除を切り替える。追加したら true */

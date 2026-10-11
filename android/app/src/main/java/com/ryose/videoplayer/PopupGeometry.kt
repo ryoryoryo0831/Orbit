@@ -46,14 +46,25 @@ object PopupGeometry {
         return x.coerceIn(kx - w, screenW - kx) to y.coerceIn(ky - h, screenH - ky)
     }
 
+    /** 真ん中のボタンの大きさ（dp）。popup_player.xml と同じ */
+    private const val BUTTON_DP = 40
+    private const val PLAY_BUTTON_DP = 48
+    /** 左上（閉じる）・右上（全画面）のボタンの大きさ（dp） */
+    private const val CORNER_DP = 36
+
     /**
-     * 小窓の幅に合わせて出す、真ん中のボタンの数
-     * （5：戻る・前へ・再生・次へ・進む／3：戻る・再生・進む／1：再生だけ／0：なし。ダブルタップで再生・一時停止）
+     * 小窓の大きさに合わせて出す、真ん中のボタンの数
+     * （5：戻る・前へ・再生・次へ・進む／3：戻る・再生・進む／1：再生だけ／0：なし。ダブルタップで再生・一時停止）。
+     * 左上・右上のボタンと重ならない数だけ出す（横に避けられるか、窓の高さがあって上下に避けられるとき）
      */
-    fun buttonCount(widthDp: Float): Int = when {
-        widthDp >= 216 -> 5
-        widthDp >= 148 -> 3
-        widthDp >= 128 -> 1
-        else -> 0
+    fun buttonCount(widthDp: Float, heightDp: Float): Int {
+        fun fits(count: Int): Boolean {
+            val row = (count - 1) * BUTTON_DP + PLAY_BUTTON_DP
+            if (widthDp < row + 8) return false
+            val besideCorners = widthDp >= row + 2 * CORNER_DP + 8
+            val belowCorners = heightDp / 2 - PLAY_BUTTON_DP / 2 >= CORNER_DP + 2
+            return besideCorners || belowCorners
+        }
+        return listOf(5, 3, 1).firstOrNull { fits(it) } ?: 0
     }
 }

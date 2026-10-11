@@ -282,7 +282,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     /** 小窓の幅に合わせて、出すボタンを増やしたり減らしたりする */
     private fun updateButtons() {
         if (root == null) return
-        val count = PopupGeometry.buttonCount(params.width / density)
+        val count = PopupGeometry.buttonCount(params.width / density, params.height / density)
         playButton.visibility = if (count >= 1) View.VISIBLE else View.GONE
         rewindButton.visibility = if (count >= 3) View.VISIBLE else View.GONE
         forwardButton.visibility = if (count >= 3) View.VISIBLE else View.GONE

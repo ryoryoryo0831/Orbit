@@ -45,10 +45,16 @@ class PopupGeometryTest {
 
     @Test
     fun ボタンの数は幅で変わる() {
-        assertEquals(5, PopupGeometry.buttonCount(240f))
-        assertEquals(3, PopupGeometry.buttonCount(180f))
-        assertEquals(1, PopupGeometry.buttonCount(132f))
+        // 横長（16:9）の動画
+        assertEquals(5, PopupGeometry.buttonCount(240f, 135f))
+        assertEquals(5, PopupGeometry.buttonCount(220f, 124f))
+        assertEquals(3, PopupGeometry.buttonCount(210f, 118f))
+        // 左上・右上のボタンと重なるので、3 つは出さない
+        assertEquals(1, PopupGeometry.buttonCount(180f, 101f))
+        assertEquals(1, PopupGeometry.buttonCount(132f, 74f))
+        // 縦長の動画は高さがあるので、幅が足りれば並べられる
+        assertEquals(3, PopupGeometry.buttonCount(140f, 249f))
         // 一番小さいときは真ん中のボタンを出さない（ダブルタップで再生・一時停止）
-        assertEquals(0, PopupGeometry.buttonCount(96f))
+        assertEquals(0, PopupGeometry.buttonCount(96f, 54f))
     }
 }

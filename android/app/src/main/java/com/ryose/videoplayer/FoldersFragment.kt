@@ -173,10 +173,21 @@ class FoldersFragment : BaseListFragment() {
     }
 
     private fun toggleFavorite(uri: Uri, title: String) {
-        val added = FavoriteFolders(requireContext()).toggle(uri, title)
-        Toast.makeText(
-            requireContext(), if (added) "「$title」をお気に入りに追加しました" else "「$title」をお気に入りから外しました", Toast.LENGTH_SHORT,
-        ).show()
+        val favorites = FavoriteFolders(requireContext())
+        val before = favorites.all()
+        val added = favorites.toggle(uri, title)
+        if (added) {
+            Toast.makeText(requireContext(), "「$title」をお気に入りに追加しました", Toast.LENGTH_SHORT).show()
+        } else {
+            // 外したときは「元に戻す」で、元の順番のまま戻せる
+            requireActivity().showUndo("「$title」をお気に入りから外しました") {
+                favorites.restoreAll(before)
+                if (view != null) {
+                    requireActivity().invalidateOptionsMenu()
+                    if (current == null) renderTop()
+                }
+            }
+        }
         requireActivity().invalidateOptionsMenu()
         if (current == null) renderTop()
     }

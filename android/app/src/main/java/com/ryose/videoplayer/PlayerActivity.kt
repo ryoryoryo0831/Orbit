@@ -44,6 +44,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
@@ -901,11 +902,35 @@ class PlayerActivity : AppCompatActivity() {
         )
     }
 
-    /** 右上の「︙」メニュー */
+    /**
+     * 右上の「︙」メニュー。よく使う機能は上のマス目に、ほかは行に並べる
+     * （全部を行にすると 17 行にもなって、目当ての項目を探しにくかった）
+     */
     private fun showMoreMenu() {
         val s = svc ?: return
         val item = s.currentItem ?: return
         val fav = FavoriteMedia.isFavorite(this, item)
+        val sleep = PlayerDialogs.sleepLabel(s)
+        val eqOn = EqualizerPrefs.load(this).enabled
+        val tiles = buildList {
+            add(SheetItem(R.drawable.ic_shuffle, "シャッフル", if (s.shuffle) "オン" else null, active = s.shuffle) {
+                s.toggleShuffle()
+                showInfo(if (s.shuffle) "シャッフル：オン" else "シャッフル：オフ")
+            })
+            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel(), active = s.abLabel() != null) {
+                showInfo(s.abStep())
+            })
+            add(SheetItem(R.drawable.ic_timer, "スリープ", PlayerDialogs.sleepShortLabel(s), active = sleep != null) {
+                PlayerDialogs.showSleepTimer(this@PlayerActivity, s)
+            })
+            add(SheetItem(R.drawable.ic_equalizer, "イコライザー", if (eqOn) "オン" else null, active = eqOn) {
+                PlayerDialogs.showEqualizer(this@PlayerActivity, s)
+            })
+            add(SheetItem(R.drawable.ic_jump, "時間を指定") { showJumpDialog() })
+            add(SheetItem(R.drawable.ic_camera, "スクショ") { takeScreenshot() })
+            if (s.chapters().isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${s.chapters().size} 個") { showChapters() })
+            if (s.player.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
+        }
         val items = buildList {
             add(SheetItem(if (fav) R.drawable.ic_star else R.drawable.ic_star_border, if (fav) "お気に入りから外す" else "お気に入りに追加", active = fav) {
                 val added = FavoriteMedia.toggle(this@PlayerActivity, item)
@@ -913,31 +938,24 @@ class PlayerActivity : AppCompatActivity() {
             })
             add(SheetItem(R.drawable.ic_playlist_add, "プレイリストに追加") { PlaylistDialogs.addToPlaylist(this@PlayerActivity, listOf(item)) })
             add(SheetItem(R.drawable.ic_queue, "再生キュー", "${s.orderPos + 1} / ${s.order.size}") { PlayerDialogs.showQueue(this@PlayerActivity, s) })
-            add(SheetItem(R.drawable.ic_shuffle, "シャッフル", if (s.shuffle) "オン" else "オフ", active = s.shuffle) {
-                s.toggleShuffle()
-                showInfo(if (s.shuffle) "シャッフル：オン" else "シャッフル：オフ")
-            })
-            add(SheetItem(R.drawable.ic_jump, "時間を指定して移動") { showJumpDialog() })
-            if (s.chapters().isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${s.chapters().size} 個") { showChapters() })
-            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel()?.let { "$it（タップで次へ）" } ?: "区間をくり返す", active = s.abLabel() != null) {
-                showInfo(s.abStep())
-            })
-            add(SheetItem(R.drawable.ic_timer, "スリープタイマー", PlayerDialogs.sleepLabel(s) ?: "オフ", active = PlayerDialogs.sleepLabel(s) != null) {
-                PlayerDialogs.showSleepTimer(this@PlayerActivity, s)
-            })
-            add(SheetItem(R.drawable.ic_equalizer, "イコライザー") { PlayerDialogs.showEqualizer(this@PlayerActivity, s) })
-            if (s.player.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
+            add(SheetItem(R.drawable.ic_popup, "小窓で再生", "自由な小窓・ピクチャーインピクチャー・画面を離れたとき") { showPopupMenu() })
             add(SheetItem(R.drawable.ic_memory, "デコード", if (s.hwDecodingFor(item)) "ハードウェア（タップでソフトウェアに）" else "ソフトウェア（タップでハードウェアに）") {
                 val hw = s.toggleHwDecoding()
                 showInfo(if (hw) "ハードウェアデコードに切り替えました" else "ソフトウェアデコードに切り替えました")
             })
-            add(SheetItem(R.drawable.ic_camera, "スクリーンショット") { takeScreenshot() })
-            add(SheetItem(R.drawable.ic_pip, "自由な小窓で再生", "大きさ・場所を自由に変えられる小窓") { startPopup() })
-            if (hasPip) add(SheetItem(R.drawable.ic_pip, "小窓で再生（ピクチャーインピクチャー）") { enterPip() })
-            add(SheetItem(R.drawable.ic_pip, "画面を離れたとき", leaveAction.label) { showLeaveActionMenu() })
             add(SheetItem(R.drawable.ic_settings, "設定") { startActivity(Intent(this@PlayerActivity, SettingsActivity::class.java)) })
         }
-        ActionSheet.show(this, s.displayTitle(), items)
+        ActionSheet.show(this, s.displayTitle(), items, tiles = tiles)
+    }
+
+    /** 小窓のメニュー（自由な小窓・OS の小窓・画面を離れたときの動き） */
+    private fun showPopupMenu() {
+        val items = buildList {
+            add(SheetItem(R.drawable.ic_popup, "自由な小窓で再生", "大きさ・場所を自由に変えられる小窓") { startPopup() })
+            if (hasPip) add(SheetItem(R.drawable.ic_pip, "ピクチャーインピクチャーで再生", "Android の小窓") { enterPip() })
+            add(SheetItem(R.drawable.ic_exit, "画面を離れたとき", leaveAction.label) { showLeaveActionMenu() })
+        }
+        ActionSheet.show(this, "小窓で再生", items)
     }
 
     private fun showLeaveActionMenu() {
@@ -945,7 +963,8 @@ class PlayerActivity : AppCompatActivity() {
         val current = leaveAction
         ActionSheet.show(this, "ホームボタンなどで画面を離れたとき", options.map { o ->
             val icon = when (o) {
-                LeaveAction.POPUP, LeaveAction.PIP -> R.drawable.ic_pip
+                LeaveAction.POPUP -> R.drawable.ic_popup
+                LeaveAction.PIP -> R.drawable.ic_pip
                 LeaveAction.AUDIO -> R.drawable.ic_music_note
                 LeaveAction.PAUSE -> R.drawable.ic_pause
             }
@@ -1017,7 +1036,7 @@ class PlayerActivity : AppCompatActivity() {
                 formatTime(c.timeOffset),
                 active = i == current,
             ) { s.player.setChapter(i) }
-        })
+        }, scrollTo = if (current > 3) current - 2 else -1)
     }
 
     /** いま表示している映像をそのまま画像として保存する */
@@ -1339,6 +1358,7 @@ class PlayerActivity : AppCompatActivity() {
         bottomBar.fadeIn()
         centerControls.fadeIn()
         controlsVisible = true
+        placeInfo(animate = true)
         updateTouchLayerDescription()
         updateSystemBars()
         handler.removeCallbacks(hideControlsTask)
@@ -1355,6 +1375,7 @@ class PlayerActivity : AppCompatActivity() {
         bottomBar.fadeOut()
         centerControls.fadeOut()
         controlsVisible = false
+        placeInfo(animate = true)
         updateTouchLayerDescription()
         updateSystemBars()
     }
@@ -1410,8 +1431,34 @@ class PlayerActivity : AppCompatActivity() {
     private fun showInfo(text: String, autoHide: Boolean = true) {
         gestureInfo.text = text
         gestureInfo.visibility = View.VISIBLE
+        placeInfo(animate = false)
         handler.removeCallbacks(hideInfo)
-        if (autoHide) handler.postDelayed(hideInfo, 1000)
+        if (autoHide) handler.postDelayed(hideInfo, infoDuration(text))
+    }
+
+    /**
+     * お知らせを出しておく時間。「ズーム 1.5 倍」のような短いものは 1.2 秒、
+     * 「お気に入りに追加しました」のような文は読み終わるまで（長いものほど長く、最大 4 秒）
+     */
+    private fun infoDuration(text: String): Long = (900L + text.length * 90L).coerceIn(1200L, 4000L)
+
+    /**
+     * 真ん中の再生ボタンが出ているときは、お知らせをボタンの上に出す（重なって読めない・押せないことがないように）。
+     * ボタンが消えたら真ん中に戻す
+     */
+    private fun placeInfo(animate: Boolean) {
+        if (gestureInfo.visibility != View.VISIBLE) {
+            gestureInfo.translationY = 0f
+            return
+        }
+        // 大きさが決まってから（文字を変えた直後はまだ前の大きさ）位置を計算する
+        gestureInfo.doOnPreDraw {
+            val gap = 12 * resources.displayMetrics.density
+            val target = if (controlsVisible) -(centerControls.height / 2f + gestureInfo.height / 2f + gap) else 0f
+            gestureInfo.animate().cancel()
+            if (animate) gestureInfo.animate().translationY(target).setDuration(150).start()
+            else gestureInfo.translationY = target
+        }
     }
 
     // ---------- ピクチャーインピクチャー ----------

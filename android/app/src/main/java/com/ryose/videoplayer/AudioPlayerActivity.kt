@@ -294,21 +294,17 @@ class AudioPlayerActivity : AppCompatActivity() {
         speedButton.contentDescription = getString(R.string.player_speed_desc, formatRate(s.rate).removeSuffix("x"))
     }
 
+    /** 右上の「︙」メニュー。よく使う機能は上のマス目に、ほかは行に並べる（動画の画面と同じ形） */
     private fun showMoreMenu() {
         val s = svc ?: return
         val item = s.currentItem ?: return
         val chapters = s.chapters()
         val fav = FavoriteMedia.isFavorite(this, item)
-        val items = buildList {
-            add(SheetItem(if (fav) R.drawable.ic_star else R.drawable.ic_star_border, if (fav) "お気に入りから外す" else "お気に入りに追加", active = fav) {
-                val added = FavoriteMedia.toggle(this@AudioPlayerActivity, item)
-                Toast.makeText(this@AudioPlayerActivity, if (added) "お気に入りに追加しました" else "お気に入りから外しました", Toast.LENGTH_SHORT).show()
-            })
-            add(SheetItem(R.drawable.ic_playlist_add, "プレイリストに追加") { PlaylistDialogs.addToPlaylist(this@AudioPlayerActivity, listOf(item)) })
-            add(SheetItem(R.drawable.ic_timer, "スリープタイマー", PlayerDialogs.sleepLabel(s) ?: "オフ", active = PlayerDialogs.sleepLabel(s) != null) {
+        val tiles = buildList {
+            add(SheetItem(R.drawable.ic_timer, "スリープ", PlayerDialogs.sleepShortLabel(s), active = PlayerDialogs.sleepLabel(s) != null) {
                 PlayerDialogs.showSleepTimer(this@AudioPlayerActivity, s)
             })
-            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel()?.let { "$it（タップで次へ）" } ?: "区間をくり返す", active = s.abLabel() != null) {
+            add(SheetItem(R.drawable.ic_ab, "A-Bリピート", s.abLabel(), active = s.abLabel() != null) {
                 Toast.makeText(this@AudioPlayerActivity, s.abStep(), Toast.LENGTH_SHORT).show()
             })
             if (chapters.isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${chapters.size} 個") {
@@ -320,16 +316,23 @@ class AudioPlayerActivity : AppCompatActivity() {
                         formatTime(c.timeOffset),
                         active = i == current,
                     ) { s.player.setChapter(i) }
-                })
+                }, scrollTo = if (current > 3) current - 2 else -1)
             })
             add(SheetItem(
                 if (s.renderer != null) R.drawable.ic_cast_connected else R.drawable.ic_cast, "キャスト",
-                s.renderer?.let { "${it.displayName ?: it.name} で再生中" } ?: "テレビ・スピーカーで再生", active = s.renderer != null,
+                s.renderer?.let { it.displayName ?: it.name }, active = s.renderer != null,
             ) { PlayerDialogs.showCast(this@AudioPlayerActivity, s) })
+        }
+        val items = buildList {
+            add(SheetItem(if (fav) R.drawable.ic_star else R.drawable.ic_star_border, if (fav) "お気に入りから外す" else "お気に入りに追加", active = fav) {
+                val added = FavoriteMedia.toggle(this@AudioPlayerActivity, item)
+                Toast.makeText(this@AudioPlayerActivity, if (added) "お気に入りに追加しました" else "お気に入りから外しました", Toast.LENGTH_SHORT).show()
+            })
+            add(SheetItem(R.drawable.ic_playlist_add, "プレイリストに追加") { PlaylistDialogs.addToPlaylist(this@AudioPlayerActivity, listOf(item)) })
             add(SheetItem(R.drawable.ic_settings, "設定") { startActivity(Intent(this@AudioPlayerActivity, SettingsActivity::class.java)) })
             add(SheetItem(R.drawable.ic_close, "再生を終了") { s.stopPlayback() })
         }
-        ActionSheet.show(this, s.displayTitle(), items, s.displaySubtitle().ifEmpty { null })
+        ActionSheet.show(this, s.displayTitle(), items, s.displaySubtitle().ifEmpty { null }, tiles = tiles)
     }
 
     private companion object {

@@ -61,6 +61,13 @@ class HistoryStore(context: Context) {
 
     fun clear() = synchronized(lock) { save(emptyList()) }
 
+    /** 消した記録を戻す（「元に戻す」）。新しい順に並べ直す */
+    fun restore(entries: List<Entry>) = synchronized(lock) {
+        val list = all()
+        val keys = list.mapTo(HashSet()) { it.item.key }
+        save((list + entries.filter { it.item.key !in keys }).sortedByDescending { it.playedAt }.take(MAX))
+    }
+
     private companion object {
         const val KEY = "entries"
         const val MAX = 200
@@ -146,6 +153,13 @@ class PlaylistStore(context: Context) {
     fun rename(id: String, name: String) = update(id) { it.copy(name = name) }
 
     fun delete(id: String) = synchronized(lock) { save(all().filterNot { it.id == id }) }
+
+    /** 削除したプレイリストを、元の場所に戻す（「元に戻す」） */
+    fun restore(p: SavedPlaylist, index: Int) = synchronized(lock) {
+        val list = all()
+        if (list.any { it.id == p.id }) return@synchronized
+        save(list.toMutableList().apply { add(index.coerceIn(0, size), p) })
+    }
 
     /** 重複を除いて追加し、追加できた件数を返す */
     fun addItems(id: String, items: List<PlaylistItem>): Int {

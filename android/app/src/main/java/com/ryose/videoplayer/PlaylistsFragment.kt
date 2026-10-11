@@ -76,8 +76,13 @@ class PlaylistsFragment : BaseListFragment() {
             },
             SheetItem(R.drawable.ic_delete, "削除") {
                 PlaylistDialogs.confirm(requireContext(), "「${p.name}」を削除しますか？\n（動画ファイルは削除されません）", "削除") {
+                    val index = store.all().indexOfFirst { it.id == id }
                     store.delete(id)
                     load()
+                    requireActivity().showUndo("「${p.name}」を削除しました") {
+                        store.restore(p, index)
+                        if (view != null) load()
+                    }
                 }
             },
         )

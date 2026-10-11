@@ -30,8 +30,13 @@ class HistoryFragment : BaseListFragment() {
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
                 if (menuItem.itemId != R.id.action_clear_history) return false
                 PlaylistDialogs.confirm(requireContext(), "再生履歴をすべて削除しますか？", "削除") {
+                    val before = history.all()
                     history.clear()
                     load()
+                    requireActivity().showUndo("再生履歴を削除しました") {
+                        history.restore(before)
+                        if (view != null) load()
+                    }
                 }
                 return true
             }
@@ -69,8 +74,13 @@ class HistoryFragment : BaseListFragment() {
     override fun extraActions(row: Row): List<SheetItem> {
         if (row !is Row.Media) return emptyList()
         return listOf(SheetItem(R.drawable.ic_history, "履歴から削除") {
+            val removed = history.all().filter { it.item.key == row.item.key }
             history.remove(row.item.key)
             load()
+            requireActivity().showUndo("履歴から削除しました") {
+                history.restore(removed)
+                if (view != null) load()
+            }
         })
     }
 }

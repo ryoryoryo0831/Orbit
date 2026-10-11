@@ -1,5 +1,107 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  よく変える設定を上に、困ったときだけ触る設定（デコードなど）を下に並べる
+-->
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="表示">
+        <ListPreference
+            app:defaultValue="dark"
+            app:entries="@array/theme_labels"
+            app:entryValues="@array/theme_values"
+            app:iconSpaceReserved="false"
+            app:key="theme"
+            app:title="テーマ"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"
+            app:key="videos_grid"
+            app:summary="「動画」タブをサムネイルの大きいグリッドで表示します"
+            app:title="動画をグリッドで表示" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="再生">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="resume"
+            app:summary="途中まで見た動画を、前回の位置から再生します"
+            app:title="続きから再生" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"
+            app:key="videos_auto_next"
+            app:summary="オフのときは、「動画」タブから見た動画が終わったらそこで止まります（フォルダ・プレイリストから再生したときは、いつも次へ進みます）"
+            app:title="「動画」タブ：終わったら次の動画を再生" />
+        <ListPreference
+            app:defaultValue="auto"
+            app:entries="@array/player_orientation_labels"
+            app:entryValues="@array/player_orientation_values"
+            app:iconSpaceReserved="false"
+            app:key="player_orientation"
+            app:title="再生画面の向き"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="POPUP"
+            app:entries="@array/leave_action_labels"
+            app:entryValues="@array/leave_action_values"
+            app:iconSpaceReserved="false"
+            app:key="leave_action"
+            app:title="動画の画面を離れたとき"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="audio_boost"
+            app:summary="音量を最大にしたあと、さらに 200% まで上げられるようにします（音が割れることがあります）"
+            app:title="音量ブースト" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="ジェスチャー（動画の再生画面）">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="gesture_brightness"
+            app:title="左側の上下スワイプで明るさ" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="gesture_volume"
+            app:title="右側の上下スワイプで音量" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="gesture_seek"
+            app:title="左右スワイプで早送り・巻き戻し" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="gesture_double_tap"
+            app:summary="左側で戻る、右側で進む、真ん中で再生／一時停止"
+            app:title="ダブルタップでスキップ" />
+        <ListPreference
+            app:defaultValue="10"
+            app:dependency="gesture_double_tap"
+            app:entries="@array/double_tap_labels"
+            app:entryValues="@array/double_tap_values"
+            app:iconSpaceReserved="false"
+            app:key="double_tap_seconds"
+            app:title="スキップする秒数"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="gesture_long_press"
+            app:summary="画面を押している間だけ 2 倍速で再生し、指を離すと元の速さに戻ります"
+            app:title="長押しで2倍速" />
+    </PreferenceCategory>
 
     <PreferenceCategory
         app:iconSpaceReserved="false"
@@ -47,41 +149,7 @@
 
     <PreferenceCategory
         app:iconSpaceReserved="false"
-        app:title="再生">
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="resume"
-            app:summary="途中まで見た動画を、前回の位置から再生します"
-            app:title="続きから再生" />
-        <ListPreference
-            app:defaultValue="POPUP"
-            app:entries="@array/leave_action_labels"
-            app:entryValues="@array/leave_action_values"
-            app:iconSpaceReserved="false"
-            app:key="leave_action"
-            app:title="動画の画面を離れたとき"
-            app:useSimpleSummaryProvider="true" />
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:iconSpaceReserved="false"
-            app:key="videos_auto_next"
-            app:summary="オフのときは、「動画」タブから見た動画が終わったらそこで止まります（フォルダ・プレイリストから再生したときは、いつも次へ進みます）"
-            app:title="「動画」タブ：終わったら次の動画を再生" />
-        <ListPreference
-            app:defaultValue="auto"
-            app:entries="@array/player_orientation_labels"
-            app:entryValues="@array/player_orientation_values"
-            app:iconSpaceReserved="false"
-            app:key="player_orientation"
-            app:title="再生画面の向き"
-            app:useSimpleSummaryProvider="true" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="audio_boost"
-            app:summary="音量を最大にしたあと、さらに 200% まで上げられるようにします（音が割れることがあります）"
-            app:title="音量ブースト" />
+        app:title="困ったときに">
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:iconSpaceReserved="false"
@@ -94,7 +162,7 @@
             app:entryValues="@array/deinterlace_values"
             app:iconSpaceReserved="false"
             app:key="deinterlace"
-            app:title="インターレース解除（テレビ録画などの横縞を消す）"
+            app:title="インターレース解除（録画の横縞を消す）"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
             app:defaultValue="1500"
@@ -104,71 +172,6 @@
             app:key="network_caching"
             app:title="ネットワーク再生の先読み"
             app:useSimpleSummaryProvider="true" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="ジェスチャー（動画の再生画面）">
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="gesture_brightness"
-            app:title="左側の上下スワイプで明るさ" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="gesture_volume"
-            app:title="右側の上下スワイプで音量" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="gesture_seek"
-            app:title="左右スワイプで早送り・巻き戻し" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="gesture_double_tap"
-            app:summary="左側で戻る、右側で進む、真ん中で再生／一時停止"
-            app:title="ダブルタップでスキップ" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="gesture_long_press"
-            app:summary="画面を押している間だけ 2 倍速で再生し、指を離すと元の速さに戻ります"
-            app:title="長押しで2倍速" />
-        <ListPreference
-            app:defaultValue="10"
-            app:dependency="gesture_double_tap"
-            app:entries="@array/double_tap_labels"
-            app:entryValues="@array/double_tap_values"
-            app:iconSpaceReserved="false"
-            app:key="double_tap_seconds"
-            app:title="スキップする秒数"
-            app:useSimpleSummaryProvider="true" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="表示">
-        <ListPreference
-            app:defaultValue="dark"
-            app:entries="@array/theme_labels"
-            app:entryValues="@array/theme_values"
-            app:iconSpaceReserved="false"
-            app:key="theme"
-            app:title="テーマ（一覧の画面の明るさ）"
-            app:useSimpleSummaryProvider="true" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="一覧">
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:iconSpaceReserved="false"
-            app:key="videos_grid"
-            app:summary="「動画」タブをサムネイルの大きいグリッドで表示します"
-            app:title="動画をグリッドで表示" />
     </PreferenceCategory>
 
     <PreferenceCategory

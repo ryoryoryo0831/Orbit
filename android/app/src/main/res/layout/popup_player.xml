@@ -41,21 +41,21 @@
         <ImageButton
             android:id="@+id/popupClose"
             style="@style/PopupButton"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:layout_gravity="top|start"
             android:contentDescription="@string/close"
-            android:padding="5dp"
+            android:padding="7dp"
             android:src="@drawable/ic_close" />
 
         <ImageButton
             android:id="@+id/popupExpand"
             style="@style/PopupButton"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:layout_gravity="top|end"
             android:contentDescription="@string/expand"
-            android:padding="5dp"
+            android:padding="7dp"
             android:src="@drawable/ic_fullscreen" />
 
         <LinearLayout
@@ -80,10 +80,10 @@
             <ImageButton
                 android:id="@+id/popupPlay"
                 style="@style/PopupButton"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:contentDescription="@string/play_pause"
-                android:padding="6dp"
+                android:padding="7dp"
                 android:src="@drawable/ic_pause" />
 
             <ImageButton

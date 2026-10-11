@@ -146,6 +146,22 @@ class MediaAdapter(
 
     class MediaHolder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
+        private val fallbackTint = android.content.res.ColorStateList.valueOf(
+            androidx.core.content.ContextCompat.getColor(view.context, R.color.text_muted)
+        )
+
+        /** サムネイル・ジャケットが無いときのアイコン（枠いっぱいに引き伸ばすと切れて見えるので、真ん中に） */
+        fun showFallback(res: Int) {
+            thumb.scaleType = ImageView.ScaleType.CENTER
+            thumb.imageTintList = fallbackTint
+            thumb.setImageResource(res)
+        }
+
+        /** 読み込めた画像は枠いっぱいに */
+        fun showImage() {
+            thumb.scaleType = ImageView.ScaleType.CENTER_CROP
+            thumb.imageTintList = null
+        }
         val duration: TextView = view.findViewById(R.id.duration)
         val progress: LinearProgressIndicator = view.findViewById(R.id.progress)
         val title: TextView = view.findViewById(R.id.title)
@@ -165,7 +181,12 @@ class MediaAdapter(
 
     override fun getItemViewType(position: Int) = when (data[position]) {
         is Row.Folder -> 0
-        is Row.Media -> if (grid) 3 else 1
+        is Row.Media -> when {
+            grid -> 3
+            // 曲は正方形の小さなジャケットの行
+            (data[position] as Row.Media).item.isAudio -> 4
+            else -> 1
+        }
         is Row.Header -> 2
     }
 
@@ -177,6 +198,7 @@ class MediaAdapter(
             0 -> FolderHolder(inflater.inflate(R.layout.item_folder, parent, false))
             2 -> HeaderHolder(inflater.inflate(R.layout.item_header, parent, false))
             3 -> MediaHolder(inflater.inflate(R.layout.item_video_grid, parent, false))
+            4 -> MediaHolder(inflater.inflate(R.layout.item_song, parent, false))
             else -> MediaHolder(inflater.inflate(R.layout.item_video, parent, false))
         }
     }
@@ -268,21 +290,20 @@ class MediaAdapter(
                 holder.meta.visibility = if (row.meta.isEmpty() && !fav) View.GONE else View.VISIBLE
                 holder.duration.text = formatTime(item.durationMs)
                 holder.duration.visibility = if (item.durationMs > 0) View.VISIBLE else View.GONE
+                val fallbackIcon = if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie
                 if (item.isNetwork) {
                     // ネットワーク上のファイルはサムネイルを作らない（全体を読み込んでしまうため）
                     holder.thumb.dispose()
-                    holder.thumb.setImageResource(if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie)
-                } else if (item.isAudio) {
-                    // 音楽はファイルに埋め込まれたジャケット画像
-                    holder.thumb.load(item.path?.let { AudioArt(it) }) {
-                        placeholder(R.drawable.ic_music_note)
-                        error(R.drawable.ic_music_note)
-                        fallback(R.drawable.ic_music_note)
-                    }
+                    holder.showFallback(fallbackIcon)
                 } else {
-                    holder.thumb.load(VideoThumb(item.path, item.uri)) {
-                        placeholder(R.drawable.ic_movie)
-                        error(R.drawable.ic_movie)
+                    // 読み込むまで・画像が無いときは、アイコンを引き伸ばさずに真ん中に小さく出す
+                    holder.showFallback(fallbackIcon)
+                    val data: Any? = if (item.isAudio) item.path?.let { AudioArt(it) } else VideoThumb(item.path, item.uri)
+                    holder.thumb.load(data) {
+                        placeholder(fallbackIcon)
+                        error(fallbackIcon)
+                        fallback(fallbackIcon)
+                        listener(onSuccess = { _, _ -> holder.showImage() })
                     }
                 }
 

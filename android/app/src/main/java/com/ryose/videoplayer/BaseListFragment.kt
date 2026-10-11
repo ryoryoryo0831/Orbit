@@ -200,11 +200,18 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
                 if (fav) "お気に入りから外す" else "お気に入りに追加",
                 active = fav,
             ) {
+                val before = PlaylistStore(ctx).get(FavoriteMedia.PLAYLIST_ID)?.items.orEmpty()
                 val added = FavoriteMedia.toggle(ctx, item)
-                android.widget.Toast.makeText(
-                    ctx, if (added) "お気に入りに追加しました" else "お気に入りから外しました", android.widget.Toast.LENGTH_SHORT,
-                ).show()
                 onFavoritesChanged()
+                if (added) {
+                    android.widget.Toast.makeText(ctx, "お気に入りに追加しました", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    // 外したときは「元に戻す」で、元の順番のまま戻せる
+                    requireActivity().showUndo("お気に入りから外しました") {
+                        PlaylistStore(ctx).setItems(FavoriteMedia.PLAYLIST_ID, before)
+                        if (view != null) onFavoritesChanged()
+                    }
+                }
             }
             actions += SheetItem(R.drawable.ic_playlist_add, "プレイリストに追加") { PlaylistDialogs.addToPlaylist(ctx, listOf(item)) }
             // 何かを再生中なら、そのキューに加えられる
