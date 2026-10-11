@@ -675,8 +675,10 @@ class PlaybackService : Service() {
         }
         if (!videoTrackDisabled) return
         setVideoEnabled(true)
-        // 一時停止中でも今の場面が表示されるように、同じ位置へ移動し直す
-        if (!player.isPlaying) player.setTime(player.time.coerceAtLeast(0))
+        // 同じ位置へ移動し直す。一時停止中でも今の場面が表示されるように、また再生中でもすぐ映るように。
+        // 映像を途中から出し直すと、VLC は次の「区切りの場面」（キーフレーム）が来るまで映像を捨てる
+        // （packetizer/h264.c）ので、移動し直さないと数秒映らないことがある
+        player.setTime(player.time.coerceAtLeast(0))
     }
 
     /** 再生を終了して通知も消す（[byUser] は、わざと終わらせたか。しばらく放っておいて終わったときは false） */

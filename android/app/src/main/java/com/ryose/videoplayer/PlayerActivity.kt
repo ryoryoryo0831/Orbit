@@ -119,7 +119,7 @@ class PlayerActivity : AppCompatActivity() {
     private var voutCount = 0
 
     /**
-     * 映像の出し先（SurfaceView）の準備ができたとき、少し待っても映像が出ていなければ出し直す。
+     * 映像の出し先（SurfaceView）の準備ができたとき、少し（0.25 秒）待っても映像が出ていなければ出し直す。
      * 出し先の準備ができる前に映像を頼むと、VLC は「出し先が無い」として映像を出すのをあきらめ、
      * あとで出し先ができてもやり直さない（libVLC の android/display.c と MediaPlayer の作り）。
      * 自由な小窓から全画面に戻ったときは画面を新しく作るので、これが起きて映像が出なかった
@@ -127,7 +127,7 @@ class PlayerActivity : AppCompatActivity() {
     private val surfacesCallback = object : org.videolan.libvlc.interfaces.IVLCVout.Callback {
         override fun onSurfacesCreated(vlcVout: org.videolan.libvlc.interfaces.IVLCVout) {
             handler.removeCallbacks(ensureVideoTask)
-            handler.postDelayed(ensureVideoTask, 1000)
+            handler.postDelayed(ensureVideoTask, 250)
         }
 
         override fun onSurfacesDestroyed(vlcVout: org.videolan.libvlc.interfaces.IVLCVout) {
