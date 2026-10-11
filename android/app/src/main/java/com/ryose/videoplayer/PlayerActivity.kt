@@ -115,6 +115,37 @@ class PlayerActivity : AppCompatActivity() {
     private var readyGeneration = 0
     /** この画面が映像の表示先になっているか */
     private var viewsAttached = false
+    /** いま映像を出しているか（VLC の Vout イベントで知らされる数） */
+    private var voutCount = 0
+
+    /**
+     * 映像の出し先（SurfaceView）の準備ができたとき、少し待っても映像が出ていなければ出し直す。
+     * 出し先の準備ができる前に映像を頼むと、VLC は「出し先が無い」として映像を出すのをあきらめ、
+     * あとで出し先ができてもやり直さない（libVLC の android/display.c と MediaPlayer の作り）。
+     * 自由な小窓から全画面に戻ったときは画面を新しく作るので、これが起きて映像が出なかった
+     */
+    private val surfacesCallback = object : org.videolan.libvlc.interfaces.IVLCVout.Callback {
+        override fun onSurfacesCreated(vlcVout: org.videolan.libvlc.interfaces.IVLCVout) {
+            handler.removeCallbacks(ensureVideoTask)
+            handler.postDelayed(ensureVideoTask, 1000)
+        }
+
+        override fun onSurfacesDestroyed(vlcVout: org.videolan.libvlc.interfaces.IVLCVout) {
+            handler.removeCallbacks(ensureVideoTask)
+        }
+    }
+
+    private fun stopWatchingSurfaces(s: PlaybackService) {
+        handler.removeCallbacks(ensureVideoTask)
+        runCatching { s.player.vlcVout.removeCallback(surfacesCallback) }
+    }
+
+    private val ensureVideoTask = Runnable {
+        val s = svc ?: return@Runnable
+        if (!viewsAttached || voutCount > 0 || s.isPreparing || s.renderer != null || s.currentItem?.isAudio != false) return@Runnable
+        s.setVideoEnabled(false)
+        s.restoreVideo()
+    }
     /** 一覧などで選ばれた動画のリストを、裏で用意している途中か */
     private var loadPending = false
     /** 今の曲が音楽・再生するものが無かったので、映像の表示先にならずに閉じた（音楽は止めない） */
@@ -394,6 +425,8 @@ class PlayerActivity : AppCompatActivity() {
         // 「︙ → 設定」で字幕の見た目などを変えて戻ってきたら、今の動画にもすぐ反映する
         val engineRebuilt = load == null && s.currentItem?.isAudio == false && s.recreateEngineKeepingItem()
         if (!viewsAttached) {
+            voutCount = 0
+            s.player.vlcVout.addCallback(surfacesCallback)
             s.player.attachViews(videoLayout, null, true, false)
             viewsAttached = true
         }
@@ -471,6 +504,7 @@ class PlayerActivity : AppCompatActivity() {
             }
             if (viewsAttached) {
                 s.videoUiAttached = false
+                stopWatchingSurfaces(s)
                 s.player.detachViews()
                 viewsAttached = false
             }
@@ -541,6 +575,8 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             MediaPlayer.Event.Vout -> {
+                voutCount = e.voutCount
+                if (voutCount > 0) handler.removeCallbacks(ensureVideoTask)
                 hideLoading()
                 if (e.voutCount > 0) onVideoReady()
             }
@@ -1471,11 +1507,14 @@ class PlayerActivity : AppCompatActivity() {
         // 画面を閉じる前と同じように、いったん映像を止めてから小窓に付け替える
         s.setVideoEnabled(false)
         s.videoUiAttached = false
+        stopWatchingSurfaces(s)
         s.player.detachViews()
         viewsAttached = false
         if (!s.showPopup()) {
             handedToPopup = false
             s.addListener(listener)
+            voutCount = 0
+            s.player.vlcVout.addCallback(surfacesCallback)
             s.player.attachViews(videoLayout, null, true, false)
             viewsAttached = true
             s.videoUiAttached = true
