@@ -14,6 +14,30 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 
 /**
+ * ファイルごとに A-B リピートの区間を覚えておく（次にそのファイルを開いたときに戻す）。
+ * A と B の両方が決まった区間だけを覚え、✕ で解除したら忘れる
+ */
+class AbStore(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("ab_repeat", Context.MODE_PRIVATE)
+
+    fun get(key: String): Pair<Long, Long>? {
+        val parts = prefs.getString(key, null)?.split(',') ?: return null
+        val a = parts.getOrNull(0)?.toLongOrNull() ?: return null
+        val b = parts.getOrNull(1)?.toLongOrNull() ?: return null
+        return if (a >= 0 && b > a) a to b else null
+    }
+
+    fun save(key: String, a: Long, b: Long) {
+        if (a < 0 || b <= a) return
+        prefs.edit().putString(key, "$a,$b").apply()
+    }
+
+    fun clear(key: String) {
+        if (prefs.contains(key)) prefs.edit().remove(key).apply()
+    }
+}
+
+/**
  * シークバーの後ろに、A-B リピートの区間（帯）と A・B の位置（縦の線）を描く。
  * シークバーと同じ大きさで重ねて置き、[seekBar] の左右の余白に合わせて位置を計算する
  */

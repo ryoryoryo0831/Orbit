@@ -158,6 +158,28 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
 
     protected open fun onRowClick(position: Int) {}
 
+    /**
+     * 下（左）のタブを押し直したとき：フォルダやアルバムの中にいたらいちばん上の階層へ戻り、一覧の一番上を見せる
+     */
+    fun onTabReselected() {
+        if (view == null) return
+        if (!goToTopLevel()) scrollToTop()
+    }
+
+    /** いちばん上の階層へ戻す（戻したら true。一番上を見せるのも各画面で行う）。階層の無い画面は何もしない */
+    protected open fun goToTopLevel(): Boolean = false
+
+    /** 一覧の一番上へ。遠いときはいったん近くまで飛んでから滑らかに動かす（何千行もあっても待たされないように） */
+    private fun scrollToTop() {
+        val lm = list.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+        if (lm == null) {
+            list.scrollToPosition(0)
+            return
+        }
+        if (lm.findFirstVisibleItemPosition() > 20) list.scrollToPosition(8)
+        list.smoothScrollToPosition(0)
+    }
+
     /** 一覧に並んでいる動画をまとめてプレイリストにして、指定の行から再生する */
     protected fun playMediaAt(position: Int, advance: Boolean = true) {
         val rows = adapter.rows

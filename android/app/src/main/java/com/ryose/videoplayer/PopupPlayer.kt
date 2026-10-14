@@ -45,8 +45,22 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private val videoSizeListener = View.OnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
         if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) setVoutSize(v.width, v.height)
     }
-    /** VLC が映像の大きさを知らせてくる（使わないが、受け取り口が要る） */
-    private val voutLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, _, _, _, _, _, _ -> }
+    /**
+     * VLC が、実際に描く映像の大きさを知らせてくる。小窓の縦横の比をこれに合わせる
+     * （トラックの情報だけでは、大きさが分からない・回転や画素の比が違うことがあり、黒い帯が出ていた）
+     */
+    private val voutLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, _, _, visibleWidth, visibleHeight, sarNum, sarDen ->
+        if (visibleWidth <= 0 || visibleHeight <= 0) return@OnNewVideoLayoutListener
+        var w = visibleWidth.toDouble()
+        if (sarNum > 0 && sarDen > 0) w = w * sarNum / sarDen
+        val a = PopupGeometry.aspect(w.roundToInt(), visibleHeight)
+        handler.post {
+            layoutAspect = a
+            fitAspect(a)
+        }
+    }
+    /** VLC から知らされた映像の比（まだなら null。曲・動画が変わったら知らされ直す） */
+    private var layoutAspect: Float? = null
 
     // 映像が出たかどうかの記録（出なかったときに、どこで止まったかを小窓に出す）
     private var surfacesReady = false
@@ -148,6 +162,9 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         }
         root = view
         view.keepScreenOn = service.isPlaying
+        // 窓の中身（ボタンの後ろの暗い幕など）を、角の丸い形に切り抜く
+        view.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        view.clipToOutline = true
 
         // 映像の出し先を VLC に直接つなぐ。VLCVideoLayout（player.attachViews）は、画面（Activity）の中でないと
         // 描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさはここで自分で伝える
@@ -181,6 +198,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     fun dismiss() {
         val view = root ?: return
         root = null
+        layoutAspect = null
         handler.removeCallbacksAndMessages(null)
         service.removeListener(this)
         savePlacement()
@@ -218,16 +236,14 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
                 voutShown = true
                 handler.removeCallbacks(checkVideoTask)
                 statusView.visibility = View.GONE
-                val a = currentAspect()
-                if (abs(a - aspect) > 0.01f) {
-                    aspect = a
-                    applySize(size, keepCenter = true)
-                }
+                // VLC から大きさを知らされていなければ、トラックの情報から求める
+                fitAspect(layoutAspect ?: currentAspect())
             }
         }
     }
 
     override fun onItemChanged() {
+        layoutAspect = null
         // 音楽に切り替わったら小窓は閉じる（音楽はそのまま再生を続ける）
         if (service.currentItem?.isAudio == true) dismiss() else updateButtons()
     }
@@ -427,6 +443,13 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         params.y = cy
         runCatching { wm.updateViewLayout(view, params) }
         updateButtons()
+    }
+
+    /** 小窓の縦横の比を、動画に合わせる（大きさは長い方の辺のまま、真ん中の位置を保つ） */
+    private fun fitAspect(a: Float) {
+        if (root == null || abs(a - aspect) <= 0.01f) return
+        aspect = a
+        applySize(size, keepCenter = true)
     }
 
     private fun moveTo(x: Int, y: Int) {

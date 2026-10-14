@@ -209,6 +209,7 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         resume = ResumeStore(this)
+        abStore = AbStore(this)
         history = HistoryStore(this)
         audioManager = getSystemService(AudioManager::class.java)
         repeat = runCatching { Repeat.valueOf(prefs().getString("repeat", null) ?: "OFF") }.getOrDefault(Repeat.OFF)
@@ -490,6 +491,14 @@ class PlaybackService : Service() {
         lastError = null
         abA = -1
         abB = -1
+        abRestoredMessage = null
+        // 前に A-B リピートをしていたファイルなら、その区間を戻す（区間の外から始まるときは A から）
+        abStore.get(item.key)?.let { (a, b) ->
+            abA = a
+            abB = b
+            if (preparingStart < a || preparingStart >= b) preparingStart = a
+            abRestoredMessage = "前回の A-B リピート（${formatTime(a)} 〜 ${formatTime(b)}）を戻しました"
+        }
 
         // 履歴は動画だけ（音楽を聴くと動画の履歴が押し出されてしまうので）
         if (!item.isAudio) scope.launch(Dispatchers.IO) { history.add(item) }
@@ -950,6 +959,19 @@ class PlaybackService : Service() {
     var abB = -1L
         private set
 
+    private lateinit var abStore: AbStore
+
+    /** ファイルを開いたときに、覚えていた A-B リピートを戻したお知らせ（画面が一度だけ受け取って出す） */
+    private var abRestoredMessage: String? = null
+
+    fun takeAbRestoredMessage(): String? = abRestoredMessage.also { abRestoredMessage = null }
+
+    /** 今の A・B を覚える（両方決まっているときだけ） */
+    private fun rememberAb() {
+        val key = currentItem?.key ?: return
+        if (abA >= 0 && abB > abA) abStore.save(key, abA, abB) else abStore.clear(key)
+    }
+
     /** A と B の最小の間隔（ミリ秒） */
     private val abMinGapMs = 500L
 
@@ -965,6 +987,7 @@ class PlaybackService : Service() {
         } else {
             "A を ${formatAbTime(t)} にしました。終わりの位置で B を押してください"
         }
+        rememberAb()
         dispatch { it.onModesChanged() }
         return msg
     }
@@ -978,6 +1001,7 @@ class PlaybackService : Service() {
             else -> {
                 abB = t
                 player.setTime(abA)
+                rememberAb()
                 dispatch { it.onModesChanged() }
                 "${formatAbTime(abA)} 〜 ${formatAbTime(t)} をくり返します"
             }
@@ -1004,6 +1028,7 @@ class PlaybackService : Service() {
             abB = v
             player.setTime(maxOf(abA, abB - 2000))
         }
+        rememberAb()
         dispatch { it.onModesChanged() }
         return if (isA) "A：${formatAbTime(abA)}" else "B：${formatAbTime(abB)}"
     }
@@ -1011,6 +1036,7 @@ class PlaybackService : Service() {
     fun clearAb() {
         abA = -1
         abB = -1
+        rememberAb()
         dispatch { it.onModesChanged() }
     }
 

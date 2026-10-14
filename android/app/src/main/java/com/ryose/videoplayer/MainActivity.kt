@@ -143,7 +143,10 @@ class MainActivity : AppCompatActivity() {
             showTab(it.itemId)
             true
         }
-        bottomNav.setOnItemReselectedListener { }
+        // 今のタブを押し直したら、そのタブのいちばん上（フォルダの中ならトップ）へ戻る
+        bottomNav.setOnItemReselectedListener {
+            (supportFragmentManager.findFragmentByTag("tab_${it.itemId}") as? BaseListFragment)?.onTabReselected()
+        }
         showTab(currentTab)
 
         miniPlayer = findViewById(R.id.miniPlayer)

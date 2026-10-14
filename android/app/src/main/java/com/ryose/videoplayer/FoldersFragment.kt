@@ -530,6 +530,14 @@ class FoldersFragment : BaseListFragment() {
         load()
     }
 
+    override fun goToTopLevel(): Boolean {
+        if (stack.isEmpty()) return false
+        stack.clear()
+        list.scrollToPosition(0)
+        load()
+        return true
+    }
+
     private fun goUp() {
         if (stack.isEmpty()) return
         val leaving = stack.removeAt(stack.lastIndex)

@@ -237,6 +237,14 @@ class VideosFragment : BaseListFragment() {
         }
     }
 
+    override fun goToTopLevel(): Boolean {
+        if (openedFolder == null) return false
+        openedFolder = null
+        savedScroll = null
+        applyFilter { list.scrollToPosition(0) }
+        return true
+    }
+
     private fun closeFolder() {
         openedFolder = null
         val scroll = savedScroll

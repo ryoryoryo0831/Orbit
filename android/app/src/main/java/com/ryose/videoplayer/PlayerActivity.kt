@@ -644,8 +644,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateItem() {
         val s = svc ?: return
-        // 曲・動画が変わると A-B リピートは解除される
+        // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
         abBar.refresh()
+        s.takeAbRestoredMessage()?.let { showInfo(it) }
         titleView.text = s.displayTitle()
         val key = s.currentItem?.key
         if (key != shownItemKey) {

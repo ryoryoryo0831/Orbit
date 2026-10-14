@@ -243,8 +243,9 @@ class AudioPlayerActivity : AppCompatActivity() {
 
     private fun updateItem() {
         val s = svc ?: return
-        // 曲・動画が変わると A-B リピートは解除される
+        // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
         abBar.refresh()
+        s.takeAbRestoredMessage()?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
         val item = s.currentItem ?: return
         titleView.text = s.displayTitle()
         subtitleView.text = s.displaySubtitle()

@@ -200,6 +200,14 @@ class MusicFragment : BaseListFragment() {
         }
     }
 
+    override fun goToTopLevel(): Boolean {
+        if (opened == null) return false
+        opened = null
+        savedScroll = null
+        render { list.scrollToPosition(0) }
+        return true
+    }
+
     private fun closeGroup() {
         opened = null
         val scroll = savedScroll

@@ -3,7 +3,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="@drawable/bg_popup_window">
 
     <!--
         映像と字幕を描く場所。libVLC の VLCVideoLayout は、画面（Activity）の中でないと
@@ -12,7 +12,8 @@
     <FrameLayout
         android:id="@+id/popupVideo"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:layout_margin="@dimen/popup_video_inset">
 
         <SurfaceView
             android:id="@+id/popupSurface"
