@@ -35,7 +35,8 @@ class HistoryFragment : BaseListFragment() {
                     load()
                     requireActivity().showUndo("再生履歴を削除しました") {
                         history.restore(before)
-                        if (view != null) load()
+                        // ここの view は onViewCreated の引数なので、画面がまだあるかは Fragment の view で確かめる
+                        if (this@HistoryFragment.view != null) load()
                     }
                 }
                 return true

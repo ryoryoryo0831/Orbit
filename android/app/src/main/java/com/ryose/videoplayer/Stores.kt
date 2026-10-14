@@ -114,14 +114,16 @@ class PlaylistStore(context: Context) {
 
     private fun save(list: List<SavedPlaylist>) {
         cache = list
-        val arr = JSONArray()
-        list.forEach { p ->
-            val items = JSONArray()
-            p.items.forEach { items.put(it.toJson()) }
-            arr.put(org.json.JSONObject().put("id", p.id).put("name", p.name).put("items", items))
-        }
-        val text = arr.toString()
+        // ファイルの中身（JSON）を作るのも裏で行う（曲の多いプレイリストでは、お気に入りの切り替えなどで画面が止まっていた）。
+        // list は書き換えない一覧なので、裏で読んでも大丈夫。書き込みは 1 本ずつ順番に行うので、古い中身で上書きすることもない
         writer.execute {
+            val arr = JSONArray()
+            list.forEach { p ->
+                val items = JSONArray()
+                p.items.forEach { items.put(it.toJson()) }
+                arr.put(org.json.JSONObject().put("id", p.id).put("name", p.name).put("items", items))
+            }
+            val text = arr.toString()
             // 書き込み途中で壊れないよう、一時ファイルに書いてから置き換える
             // （容量不足などで書けなくても、アプリごと落ちないようにする）
             runCatching {

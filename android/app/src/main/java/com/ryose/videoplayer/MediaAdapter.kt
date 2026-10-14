@@ -58,18 +58,23 @@ class MediaAdapter(
             val old = data
             val new = value.toMutableList()
             data = new
-            // お気に入りの ★ が変わったときや、大きすぎて比べるのに時間がかかるときは全部描き直す
-            if (favoritesChanged || old.isEmpty() || new.isEmpty() || old.size.toLong() * new.size > 4_000_000L) {
+            // 中身が同じなら何もしない（再生から戻ったときなど。再生位置のバーは refreshProgress で直す）
+            if (!favoritesChanged && old == new) return
+            // お気に入りの ★ が変わったときや、行が多いときは全部描き直す。
+            // 描き直すのは画面に見えている十数行だけなので速いが、何百行もの差分を比べるのは画面の処理を止めてしまう
+            // （並べ替え・検索で、1000 本を超える一覧が一瞬固まっていた）
+            if (favoritesChanged || old.isEmpty() || new.isEmpty() || old.size + new.size > MAX_DIFF_ROWS) {
                 favoritesChanged = false
                 notifyDataSetChanged()
                 return
             }
+            // 並べ替え（行の移動）は探さない（探すと行数の 2 乗の時間がかかる）
             DiffUtil.calculateDiff(object : DiffUtil.Callback() {
                 override fun getOldListSize() = old.size
                 override fun getNewListSize() = new.size
                 override fun areItemsTheSame(o: Int, n: Int) = identity(old[o]) == identity(new[n])
                 override fun areContentsTheSame(o: Int, n: Int) = old[o] == new[n]
-            }).dispatchUpdatesTo(this)
+            }, false).dispatchUpdatesTo(this)
         }
 
     private fun identity(row: Row): String = when (row) {
@@ -321,5 +326,7 @@ class MediaAdapter(
 
     private companion object {
         const val PAYLOAD_PROGRESS = "progress"
+        /** これより多い行の一覧は、差分を比べずに全部描き直す */
+        const val MAX_DIFF_ROWS = 600
     }
 }

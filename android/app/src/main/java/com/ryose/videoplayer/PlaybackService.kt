@@ -330,7 +330,7 @@ class PlaybackService : Service() {
         session.release()
         player.setEventListener(null)
         player.release()
-        libVLC.release()
+        // VLC の本体（libVLC）は次に開くときのために残しておく（VlcEngine）
         closeFd()
         super.onDestroy()
     }
@@ -343,12 +343,8 @@ class PlaybackService : Service() {
 
     private fun createEngine() {
         val options = AppSettings.vlcOptions(this)
-        libVLC = try {
-            LibVLC(this, ArrayList(options))
-        } catch (_: Exception) {
-            // 万一オプションが受け付けられなかった場合は、基本のオプションだけで作る
-            LibVLC(this, ArrayList(AppSettings.BASE_VLC_OPTIONS))
-        }
+        // 本体はアプリで 1 つ（起動時に裏で作ってある）。設定が変わっていれば作り直される
+        libVLC = VlcEngine.obtain(this, options)
         engineOptions = options
         player = MediaPlayer(libVLC)
         player.setEventListener(object : MediaPlayer.EventListener {
@@ -377,7 +373,7 @@ class PlaybackService : Service() {
         player.setEventListener(null)
         player.stop()
         player.release()
-        libVLC.release()
+        // 古い本体は VlcEngine が新しいものを作ったあとに片付ける
         createEngine()
     }
 
@@ -1109,7 +1105,8 @@ class PlaybackService : Service() {
     private val saveTask = object : Runnable {
         override fun run() {
             savePosition()
-            handler.postDelayed(this, 5000)
+            // 一時停止・停止のときにも保存するので、再生中は 15 秒ごとで十分（保存のたびに設定ファイルをまるごと書き直すため）
+            handler.postDelayed(this, 15_000)
         }
     }
 

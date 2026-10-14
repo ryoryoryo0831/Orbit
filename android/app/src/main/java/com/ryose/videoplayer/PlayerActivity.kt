@@ -576,7 +576,8 @@ class PlayerActivity : AppCompatActivity() {
                 if (lengthMs <= 0) svc?.let { setLength(it.lengthMs) }
                 if (!userSeeking) {
                     seekBar.progress = e.timeChanged.toInt()
-                    timeCurrent.text = formatTime(e.timeChanged)
+                    // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
+                    timeCurrent.setTextIfChanged(formatTime(e.timeChanged))
                 }
             }
             MediaPlayer.Event.Vout -> {

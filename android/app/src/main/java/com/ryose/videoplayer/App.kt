@@ -44,6 +44,14 @@ class App : Application(), ImageLoaderFactory {
         CoroutineScope(Dispatchers.IO).launch {
             runCatching { ServerStore(this@App).preload() }
         }
+        // VLC の本体（大きなライブラリの読み込みを含む）と、プレイリストのファイルも先に裏で用意しておく
+        // （動画を開いたとき・一覧を最初に出すときに、画面が止まらないように）
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { VlcEngine.warmUp(this@App) }
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { PlaylistStore(this@App).all() }
+        }
     }
 
     override fun newImageLoader(): ImageLoader =
@@ -55,6 +63,9 @@ class App : Application(), ImageLoaderFactory {
                 add(Keyer<VideoThumb> { data, _ -> "thumb:${data.path ?: data.uri}" })
             }
             .crossfade(true)
+            // サムネイル・ジャケットを作る処理（動画から場面を取り出すなど）は重いので、同時に 3 つまでにする。
+            // 速くスクロールしたときに何十も同時に走って、端末全体（再生も）が重くなっていた
+            .fetcherDispatcher(Dispatchers.IO.limitedParallelism(3))
             .build()
 }
 
@@ -78,7 +89,9 @@ object ThumbCache {
     fun getOrCreate(context: Context, key: String, modified: Long, make: () -> Bitmap?): File? {
         val file = fileFor(context, key, modified)
         if (file.length() > 0) {
-            file.setLastModified(System.currentTimeMillis())
+            // 使った印（増えすぎたときに古いものから消すため）。毎回書くと重いので、1 日に 1 回まで
+            val now = System.currentTimeMillis()
+            if (now - file.lastModified() > 24 * 60 * 60 * 1000L) file.setLastModified(now)
             return file
         }
         if (file.name in failed) return null
@@ -179,9 +192,18 @@ private class AudioArtFetcher(private val data: AudioArt, private val options: O
             } finally {
                 runCatching { r.release() }
             }
-            bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            bytes?.let { decodeSmall(it) }
         } ?: throw IllegalStateException("ジャケット画像がありません")
         return ThumbCache.source(file)
+    }
+
+    /** 大きなジャケット画像（3000 ピクセル四方など）を、そのまま読むとメモリと時間を使うので、縮小して読む */
+    private fun decodeSmall(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= 384 && bounds.outHeight / (sample * 2) >= 384) sample *= 2
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     class Factory : Fetcher.Factory<AudioArt> {
