@@ -141,6 +141,10 @@ class FoldersFragment : BaseListFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         list.removeCallbacks(renderNetTask)
+        netCollector?.cancel()
+        netCollector = null
+        netDialog?.dismiss()
+        netDialog = null
     }
 
     // ---------- お気に入り ----------
@@ -152,7 +156,7 @@ class FoldersFragment : BaseListFragment() {
         }
 
         override fun onPrepareMenu(menu: android.view.Menu) {
-            menu.findItem(R.id.action_play_folder)?.isVisible = current is Loc.Local
+            menu.findItem(R.id.action_play_folder)?.isVisible = current != null
             val item = menu.findItem(R.id.action_favorite) ?: return
             val loc = current
             item.isVisible = loc != null
@@ -163,8 +167,10 @@ class FoldersFragment : BaseListFragment() {
 
         override fun onMenuItemSelected(menuItem: android.view.MenuItem): Boolean {
             when (menuItem.itemId) {
-                R.id.action_play_folder -> (current as? Loc.Local)?.let { loc ->
-                    ActionSheet.show(requireContext(), labelOf(loc), playFolderItems(loc.dir))
+                R.id.action_play_folder -> when (val loc = current) {
+                    is Loc.Local -> ActionSheet.show(requireContext(), labelOf(loc), playFolderItems(loc.dir))
+                    is Loc.Net -> ActionSheet.show(requireContext(), labelOf(loc), playNetItems(loc.uri, labelOf(loc)))
+                    null -> {}
                 }
                 R.id.action_favorite -> current?.let { toggleFavorite(uriOf(it), labelOf(it)) }
                 else -> return false
@@ -598,9 +604,14 @@ class FoldersFragment : BaseListFragment() {
             }
             id != null && id.startsWith("fav:") -> {
                 val uri = Uri.parse(id.removePrefix("fav:"))
-                // 端末内のフォルダなら、ここから再生もできる
+                // ここから再生もできる（端末内のフォルダも、ネットワークの場所も）
                 val localDir = uri.takeIf { it.scheme == "file" }?.path?.let { File(it) }?.takeIf { it.isDirectory }
-                localDir?.let { playFolderItems(it) }.orEmpty() + listOf(
+                val play = when {
+                    localDir != null -> playFolderItems(localDir)
+                    uri.scheme != "file" -> playNetItems(uri, row.name)
+                    else -> emptyList()
+                }
+                play + listOf(
                     SheetItem(R.drawable.ic_edit, "表示名を変更") {
                         PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name) { name ->
                             FavoriteFolders(requireContext()).rename(uri, name)
@@ -613,7 +624,7 @@ class FoldersFragment : BaseListFragment() {
             id != null && id.startsWith("server:") -> {
                 val store = ServerStore(requireContext())
                 val server = store.get(id.removePrefix("server:")) ?: return emptyList()
-                listOf(
+                playNetItems(server.uri, server.name) + listOf(
                     favoriteItem(server.uri, server.name),
                     SheetItem(R.drawable.ic_edit, "編集") { NetworkDialogs.editServer(requireActivity(), server) { load() } },
                     SheetItem(R.drawable.ic_delete, "削除") {
@@ -626,6 +637,7 @@ class FoldersFragment : BaseListFragment() {
             }
             id != null && id.startsWith("net:") -> buildList {
                 val uri = Uri.parse(id.removePrefix("net:"))
+                addAll(playNetItems(uri, row.name))
                 add(favoriteItem(uri, row.name))
                 // 見つかった共有フォルダを、ログイン情報付きで登録する
                 if (current == null && uri.scheme?.lowercase() in Server.PROTOCOLS.keys) {
@@ -638,7 +650,6 @@ class FoldersFragment : BaseListFragment() {
         }
     }
 
-    /** フォルダ直下の動画・音楽を読み込んでから処理する（空なら知らせる） */
     /**
      * フォルダを再生するメニューの項目。サブフォルダがあれば、その中まで全部をまとめて再生する項目も出す
      */
@@ -677,6 +688,82 @@ class FoldersFragment : BaseListFragment() {
         }
     }
 
+    /** ネットワークのフォルダ（NAS・DLNA など）を再生するメニューの項目。サブフォルダがあるかは読んでみないと分からないので、いつも出す */
+    private fun playNetItems(uri: Uri, title: String): List<SheetItem> = listOf(
+        SheetItem(R.drawable.ic_play, "このフォルダを再生") {
+            withNetFolder(uri, title, includeSubfolders = false) { requireActivity().playItems(it, 0) }
+        },
+        SheetItem(R.drawable.ic_shuffle, "シャッフル再生") {
+            withNetFolder(uri, title, includeSubfolders = false) { requireActivity().playItems(it, it.indices.random(), shuffle = true) }
+        },
+        SheetItem(R.drawable.ic_folder_open, "サブフォルダも含めて再生", "中のフォルダの動画・音楽も、すべてまとめて") {
+            withNetFolder(uri, title, includeSubfolders = true) { requireActivity().playItems(it, 0) }
+        },
+        SheetItem(R.drawable.ic_shuffle, "サブフォルダも含めてシャッフル再生") {
+            withNetFolder(uri, title, includeSubfolders = true) { requireActivity().playItems(it, it.indices.random(), shuffle = true) }
+        },
+    )
+
+    /** ネットワークのフォルダの中身を集めている途中のもの（画面を閉じたら止める） */
+    private var netCollector: NetTreeCollector? = null
+    private var netDialog: androidx.appcompat.app.AlertDialog? = null
+
+    /**
+     * ネットワークのフォルダの動画・音楽を（[includeSubfolders] ならサブフォルダの中まで）集めてから action に渡す。
+     * ネットワーク越しで時間がかかるので、進み具合とキャンセルのボタンを出す
+     */
+    private fun withNetFolder(uri: Uri, title: String, includeSubfolders: Boolean, action: (List<PlaylistItem>) -> Unit) {
+        val s = svc
+        if (s == null) {
+            Toast.makeText(requireContext(), "準備中です。少し待ってからもう一度お試しください", Toast.LENGTH_SHORT).show()
+            return
+        }
+        netCollector?.cancel()
+        netDialog?.dismiss()
+        val ctx = requireContext()
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle("「$title」を調べています")
+            .setMessage("ネットワークのフォルダを読んでいます…")
+            .setNegativeButton("キャンセル", null)
+            .create()
+        val collector = NetTreeCollector(
+            ctx, s.libVLC, uri, includeSubfolders,
+            onProgress = { folders, found ->
+                dialog.setMessage(
+                    if (includeSubfolders) "$folders 個のフォルダを読みました
+見つかった動画・音楽：$found 件" else "見つかった動画・音楽：$found 件"
+                )
+            },
+            onDone = { items, truncated ->
+                netCollector = null
+                netDialog = null
+                dialog.dismiss()
+                if (view != null) {
+                    when {
+                        items.isEmpty() -> Toast.makeText(ctx, "動画や音楽が見つかりませんでした", Toast.LENGTH_SHORT).show()
+                        else -> {
+                            if (truncated) Toast.makeText(ctx, "多すぎるので、見つかった ${items.size} 件を再生します", Toast.LENGTH_LONG).show()
+                            action(items)
+                        }
+                    }
+                }
+            },
+        )
+        // キャンセル・戻るで閉じたら、読むのをやめる
+        dialog.setOnDismissListener {
+            if (netCollector === collector) {
+                collector.cancel()
+                netCollector = null
+                netDialog = null
+            }
+        }
+        netCollector = collector
+        netDialog = dialog
+        dialog.show()
+        collector.start()
+    }
+
+    /** フォルダ直下の動画・音楽を読み込んでから処理する（空なら知らせる） */
     private fun withFolderMedia(dir: File, action: (List<PlaylistItem>) -> Unit) {
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch {
