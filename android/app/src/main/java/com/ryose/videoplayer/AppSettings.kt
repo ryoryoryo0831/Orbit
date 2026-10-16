@@ -45,6 +45,8 @@ object AppSettings {
     fun playerOrientation(c: Context) = string(c, "player_orientation", "auto")
     /** 「動画」タブの一覧から再生したとき、終わったら次の動画を再生する */
     fun videosAutoNext(c: Context) = bool(c, "videos_auto_next", false)
+    /** DVD（ISO）をメニューから始める（オフなら本編から） */
+    fun dvdMenuStart(c: Context) = bool(c, "dvd_menu_start", false)
     fun networkCachingMs(c: Context) = string(c, "network_caching", "1500").toIntOrNull() ?: 1500
 
     /** テーマ（"dark"・"light"・"system"）を反映する */

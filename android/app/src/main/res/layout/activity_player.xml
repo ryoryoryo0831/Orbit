@@ -394,6 +394,94 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- DVD のメニューを操作する十字キー（DVD のメニューを表示している間だけ出す。PlayerActivity） -->
+    <LinearLayout
+        android:id="@+id/dvdPad"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/bg_info"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="4dp"
+                android:text="@string/dvd_menu"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <ImageButton
+                android:id="@+id/dvdClose"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/dvd_pad_close"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_close"
+                app:tint="#FFFFFF" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/dvdUp"
+            style="@style/DvdPadButton"
+            android:contentDescription="@string/dvd_up"
+            android:src="@drawable/ic_expand_less" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginVertical="4dp"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/dvdLeft"
+                style="@style/DvdPadButton"
+                android:contentDescription="@string/dvd_left"
+                android:rotation="-90"
+                android:src="@drawable/ic_expand_less" />
+
+            <TextView
+                android:id="@+id/dvdOk"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_marginHorizontal="4dp"
+                android:background="@drawable/bg_round_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="@string/dvd_ok"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/dvdRight"
+                style="@style/DvdPadButton"
+                android:contentDescription="@string/dvd_right"
+                android:rotation="90"
+                android:src="@drawable/ic_expand_less" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/dvdDown"
+            style="@style/DvdPadButton"
+            android:contentDescription="@string/dvd_down"
+            android:src="@drawable/ic_expand_more" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/gestureInfo"
         android:layout_width="wrap_content"

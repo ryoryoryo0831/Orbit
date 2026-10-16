@@ -88,6 +88,16 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repeatButton: ImageButton
     private lateinit var unlockButton: ImageButton
     private lateinit var abBar: AbRepeatBar
+    private lateinit var dvdPad: View
+    /** 十字キーを ✕ で閉じた（DVD のメニューから出るまでは出さない） */
+    private var dvdPadDismissed = false
+    /** DVD（ISO）を再生している間、メニューを表示しているかを見張る（libVLC はタイトルが変わったことを知らせないため） */
+    private val dvdMenuCheck = object : Runnable {
+        override fun run() {
+            updateDvdPad()
+            handler.postDelayed(this, 700)
+        }
+    }
     private lateinit var castButton: ImageButton
     private lateinit var castInfo: TextView
     private lateinit var gestureInfo: TextView
@@ -294,6 +304,7 @@ class PlayerActivity : AppCompatActivity() {
         centerControls = findViewById(R.id.centerControls)
         titleView = findViewById(R.id.titleView)
         seekBar = findViewById(R.id.seekBar)
+        setupDvdPad()
         abBar = AbRepeatBar(
             findViewById(R.id.abPanel),
             findViewById<AbRangeView>(R.id.abRange).also { it.seekBar = seekBar },
@@ -485,6 +496,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        handler.removeCallbacks(dvdMenuCheck)
         // 自由な小窓に引き渡した：再生はそのまま続ける
         if (handedToPopup) {
             disconnect()
@@ -645,6 +657,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateItem() {
         val s = svc ?: return
+        // DVD（ISO）のときだけ、メニューを表示しているかを見張って十字キーを出す
+        handler.removeCallbacks(dvdMenuCheck)
+        dvdPadDismissed = false
+        if (s.currentItem?.isDiscImage == true) handler.post(dvdMenuCheck) else dvdPad.visibility = View.GONE
         // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
         abBar.refresh()
         s.takeAbRestoredMessage()?.let { showInfo(it) }
@@ -936,7 +952,9 @@ class PlayerActivity : AppCompatActivity() {
             if (s.chapters().isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${s.chapters().size} 個") { showChapters() })
             // DVD・Blu-ray（ISO）の本編・特典映像などを選ぶ
             val titleCount = s.titles().size
-            if (titleCount > 1) add(SheetItem(R.drawable.ic_album, "タイトル", "$titleCount 個") { showTitles() })
+            if (titleCount > 1) add(SheetItem(R.drawable.ic_movie, "タイトル", "$titleCount 個") { showTitles() })
+            // DVD のメニューを開いて、十字キーで操作する
+            if (s.discMenuTitle() >= 0) add(SheetItem(R.drawable.ic_album, "DVD メニュー") { openDvdMenu() })
             if (s.player.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
         }
         val items = buildList {
@@ -1054,6 +1072,52 @@ class PlayerActivity : AppCompatActivity() {
         }, scrollTo = if (current > 3) current - 2 else -1)
     }
 
+    // ---------- DVD のメニュー ----------
+
+    private fun setupDvdPad() {
+        dvdPad = findViewById(R.id.dvdPad)
+        fun nav(id: Int, direction: Int) = findViewById<View>(id).setOnClickListener {
+            svc?.navigate(direction)
+            // 決定でメニューから本編に移ったら、十字キーを片付ける
+            handler.postDelayed({ updateDvdPad() }, 400)
+        }
+        nav(R.id.dvdUp, MediaPlayer.Navigate.Up)
+        nav(R.id.dvdDown, MediaPlayer.Navigate.Down)
+        nav(R.id.dvdLeft, MediaPlayer.Navigate.Left)
+        nav(R.id.dvdRight, MediaPlayer.Navigate.Right)
+        nav(R.id.dvdOk, MediaPlayer.Navigate.Activate)
+        findViewById<View>(R.id.dvdClose).setOnClickListener {
+            dvdPadDismissed = true
+            updateDvdPad()
+        }
+        // 横向きでナビゲーションバー・切り欠きに重ならないように
+        val baseEnd = (dvdPad.layoutParams as ViewGroup.MarginLayoutParams).marginEnd
+        ViewCompat.setOnApplyWindowInsetsListener(dvdPad) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.updateLayoutParams<ViewGroup.MarginLayoutParams> { marginEnd = baseEnd + bars.right }
+            insets
+        }
+    }
+
+    /** DVD のメニューを表示している間だけ十字キーを出す（✕で閉じたら、メニューから出るまで出さない） */
+    private fun updateDvdPad() {
+        val inMenu = svc?.isInDiscMenu() == true
+        if (!inMenu) dvdPadDismissed = false
+        dvdPad.visibility = if (inMenu && !dvdPadDismissed && !inPip && !locked) View.VISIBLE else View.GONE
+    }
+
+    /** ︙の「DVD メニュー」：メニューを開いて十字キーを出す */
+    private fun openDvdMenu() {
+        val s = svc ?: return
+        if (!s.openDiscMenu()) {
+            showInfo("この DVD にはメニューがありません")
+            return
+        }
+        dvdPadDismissed = false
+        hideControls()
+        handler.postDelayed({ updateDvdPad() }, 500)
+    }
+
     /** DVD・Blu-ray のタイトルの一覧（本編・特典映像など）。選ぶとそのタイトルを最初から再生する */
     private fun showTitles() {
         val s = svc ?: return
@@ -1147,6 +1211,22 @@ class PlayerActivity : AppCompatActivity() {
         val s0 = svc
         // エラーの表示中は、十字キーで「再試行」「閉じる」を選べるようにする（シークや操作パネルに取られない）
         if (errorPanel.visibility == View.VISIBLE && keyCode in DPAD_KEYS) return super.onKeyDown(keyCode, event)
+        // DVD のメニューを表示している間は、リモコン・キーボードの十字キーでメニューを操作する
+        if (dvdPad.visibility == View.VISIBLE && s0 != null) {
+            val direction = when (keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_UP -> MediaPlayer.Navigate.Up
+                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> MediaPlayer.Navigate.Down
+                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> MediaPlayer.Navigate.Left
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> MediaPlayer.Navigate.Right
+                android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> MediaPlayer.Navigate.Activate
+                else -> null
+            }
+            if (direction != null) {
+                s0.navigate(direction)
+                handler.postDelayed({ updateDvdPad() }, 400)
+                return true
+            }
+        }
         if (s0 != null && !locked) {
             when (keyCode) {
                 android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_SPACE -> {

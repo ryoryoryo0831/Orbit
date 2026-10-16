@@ -60,6 +60,12 @@
             app:key="audio_boost"
             app:summary="音量を最大にしたあと、さらに 200% まで上げられるようにします（音が割れることがあります）"
             app:title="音量ブースト" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"
+            app:key="dvd_menu_start"
+            app:summary="オフのときは本編（いちばん長いタイトル）から再生します。メニューは再生画面の︙の「DVD メニュー」からも開けます"
+            app:title="DVD（ISO）をメニューから始める" />
     </PreferenceCategory>
 
     <PreferenceCategory

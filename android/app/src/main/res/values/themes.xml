@@ -126,6 +126,16 @@
         <item name="android:textSize">13sp</item>
         <item name="android:fontFeatureSettings">tnum</item>
     </style>
+    <!-- DVD のメニューを操作する十字キーのボタン -->
+    <style name="DvdPadButton">
+        <item name="android:layout_width">52dp</item>
+        <item name="android:layout_height">52dp</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:background">@drawable/bg_round_button</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="tint">#FFFFFF</item>
+    </style>
+
     <!-- A-B リピートのパネル：A・B のボタン（押すと今の位置に設定） -->
     <style name="AbPointButton" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:layout_width">0dp</item>

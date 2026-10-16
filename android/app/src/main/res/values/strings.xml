@@ -80,6 +80,15 @@
     <string name="player_restart">最初から再生</string>
     <string name="player_now_playing">再生中</string>
     <string name="player_time_zero" translatable="false">0:00</string>
+    <!-- DVD のメニューの十字キー -->
+    <string name="dvd_up">上</string>
+    <string name="dvd_down">下</string>
+    <string name="dvd_left">左</string>
+    <string name="dvd_right">右</string>
+    <string name="dvd_ok">決定</string>
+    <string name="dvd_menu">DVD メニュー</string>
+    <string name="dvd_pad_close">十字キーを閉じる</string>
+
     <!-- A-B リピートの操作パネル -->
     <string name="ab_set_a">A を設定</string>
     <string name="ab_set_b">B を設定</string>

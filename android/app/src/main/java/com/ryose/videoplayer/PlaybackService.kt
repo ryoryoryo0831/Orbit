@@ -560,12 +560,15 @@ class PlaybackService : Service() {
             if (!item.isAudio) media.addOption(":sub-autodetect-file")
         }
         if (item.isDiscImage) {
-            // DVD・Blu-ray のメニューは、この画面では操作できない（メニューで止まってしまう）ので出さない。
-            // 本編（いちばん長いタイトル）は再生が始まってから選び、続きの位置へはそのあとで移る
-            media.addOption(":no-dvdnav-menu")
+            // Blu-ray のメニュー（多くは Java で動く）は Android では動かないので出さない
             media.addOption(":no-bluray-menu")
-            discTitlePending = gen
-            discStartMs = startMs
+            if (!AppSettings.dvdMenuStart(this)) {
+                // DVD もメニューを出さず、本編（いちばん長いタイトル）を再生が始まってから選び、続きの位置へはそのあとで移る。
+                // メニューは再生画面の︙から開ける（十字キーで操作する）
+                media.addOption(":no-dvdnav-menu")
+                discTitlePending = gen
+                discStartMs = startMs
+            }
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
         }
@@ -1082,6 +1085,30 @@ class PlaybackService : Service() {
     fun playTitle(index: Int) {
         runCatching { player.title = index }
         dispatch { it.onModesChanged() }
+    }
+
+    /** DVD のメニューを表示しているか（今のタイトルがメニュー） */
+    fun isInDiscMenu(): Boolean {
+        if (currentItem?.isDiscImage != true) return false
+        val titles = titles()
+        val i = currentTitle()
+        return i in titles.indices && titles[i].isMenu
+    }
+
+    /** DVD のメニューのタイトル（無ければ -1） */
+    fun discMenuTitle(): Int = if (currentItem?.isDiscImage == true) titles().indexOfFirst { it.isMenu } else -1
+
+    /** DVD のメニューを開く。開けなければ false */
+    fun openDiscMenu(): Boolean {
+        val i = discMenuTitle()
+        if (i < 0) return false
+        playTitle(i)
+        return true
+    }
+
+    /** DVD のメニューの操作（MediaPlayer.Navigate の上・下・左・右・決定） */
+    fun navigate(direction: Int) {
+        runCatching { player.navigate(direction) }
     }
 
     private fun scheduleMainTitle(gen: Int, tries: Int) {
