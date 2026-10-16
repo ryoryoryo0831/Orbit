@@ -45,8 +45,11 @@ object AppSettings {
     fun playerOrientation(c: Context) = string(c, "player_orientation", "auto")
     /** 「動画」タブの一覧から再生したとき、終わったら次の動画を再生する */
     fun videosAutoNext(c: Context) = bool(c, "videos_auto_next", false)
-    /** DVD（ISO）をメニューから始める（オフなら本編から） */
-    fun dvdMenuStart(c: Context) = bool(c, "dvd_menu_start", false)
+    /**
+     * DVD（ISO）をメニューから始める（初期はオン。オフなら本編から）。
+     * 1.0.72 の「dvd_menu_start」（初期オフ）は、設定画面を開いただけでオフが保存されているので、名前を変えて初期値をオンにした
+     */
+    fun dvdMenuStart(c: Context) = bool(c, "dvd_start_in_menu", true)
     fun networkCachingMs(c: Context) = string(c, "network_caching", "1500").toIntOrNull() ?: 1500
 
     /** テーマ（"dark"・"light"・"system"）を反映する */
