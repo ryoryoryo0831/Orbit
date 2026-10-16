@@ -730,8 +730,7 @@ class FoldersFragment : BaseListFragment() {
             ctx, s.libVLC, uri, includeSubfolders,
             onProgress = { folders, found ->
                 dialog.setMessage(
-                    if (includeSubfolders) "$folders 個のフォルダを読みました
-見つかった動画・音楽：$found 件" else "見つかった動画・音楽：$found 件"
+                    if (includeSubfolders) "$folders 個のフォルダを読みました\n見つかった動画・音楽：$found 件" else "見つかった動画・音楽：$found 件"
                 )
             },
             onDone = { items, truncated ->
