@@ -295,7 +295,12 @@ class MediaAdapter(
                 holder.meta.visibility = if (row.meta.isEmpty() && !fav) View.GONE else View.VISIBLE
                 holder.duration.text = formatTime(item.durationMs)
                 holder.duration.visibility = if (item.durationMs > 0) View.VISIBLE else View.GONE
-                val fallbackIcon = if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie
+                val fallbackIcon = when {
+                    item.isAudio -> R.drawable.ic_music_note
+                    // DVD・Blu-ray のディスクイメージは円盤のアイコン
+                    item.isDiscImage -> R.drawable.ic_album
+                    else -> R.drawable.ic_movie
+                }
                 if (item.isNetwork) {
                     // ネットワーク上のファイルはサムネイルを作らない（全体を読み込んでしまうため）
                     holder.thumb.dispose()

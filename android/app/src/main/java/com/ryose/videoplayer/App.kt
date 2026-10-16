@@ -141,6 +141,8 @@ object ThumbCache {
 
 private class VideoThumbFetcher(private val data: VideoThumb, private val options: Options) : Fetcher {
     override suspend fun fetch(): FetchResult {
+        // ISO（ディスクイメージ）からは場面を取り出せない（何 GB もあるファイルを調べに行って時間だけかかる）
+        if ((data.path ?: data.uri.toString()).lowercase().endsWith(".iso")) throw IllegalStateException("ディスクイメージ")
         val context = options.context
         val modified = data.path?.let { File(it).lastModified() } ?: 0L
         val file = ThumbCache.getOrCreate(context, data.path ?: data.uri.toString(), modified) {

@@ -559,7 +559,16 @@ class PlaybackService : Service() {
             // NAS などでは隣の字幕ファイルをアプリが探せないので、VLC に探してもらう
             if (!item.isAudio) media.addOption(":sub-autodetect-file")
         }
-        if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
+        if (item.isDiscImage) {
+            // DVD・Blu-ray のメニューは、この画面では操作できない（メニューで止まってしまう）ので出さない。
+            // 本編（いちばん長いタイトル）は再生が始まってから選び、続きの位置へはそのあとで移る
+            media.addOption(":no-dvdnav-menu")
+            media.addOption(":no-bluray-menu")
+            discTitlePending = gen
+            discStartMs = startMs
+        } else if (startMs > 0) {
+            media.addOption(":start-time=${startMs / 1000.0}")
+        }
         if (paused) media.addOption(":start-paused")
         // 準備している間に画面を離れた・戻ってきた場合もあるので、映像を出すかどうかは今の状態で決める
         videoTrackDisabled = false
@@ -1058,6 +1067,54 @@ class PlaybackService : Service() {
 
     fun chapters(): Array<MediaPlayer.Chapter> = runCatching { player.getChapters(-1) }.getOrNull() ?: emptyArray()
 
+    // ---------- DVD・Blu-ray のディスクイメージ（ISO） ----------
+
+    /** 本編を選ぶのを待っている再生（playGeneration の番号。無ければ -1） */
+    private var discTitlePending = -1
+    /** 本編を選んだあとに移る位置（続きから再生・A-B リピート） */
+    private var discStartMs = 0L
+
+    /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
+    fun titles(): Array<MediaPlayer.Title> = runCatching { player.titles }.getOrNull() ?: emptyArray()
+
+    fun currentTitle(): Int = runCatching { player.title }.getOrDefault(-1)
+
+    fun playTitle(index: Int) {
+        runCatching { player.title = index }
+        dispatch { it.onModesChanged() }
+    }
+
+    private fun scheduleMainTitle(gen: Int, tries: Int) {
+        handler.postDelayed({ chooseMainTitle(gen, tries) }, 400)
+    }
+
+    /**
+     * 本編（メニューではない、いちばん長いタイトル）を再生する。
+     * タイトルの一覧は再生が始まってから少しして分かるので、分かるまで少し待つ
+     */
+    private fun chooseMainTitle(gen: Int, tries: Int) {
+        if (gen != playGeneration) return
+        val titles = titles()
+        if (titles.isEmpty()) {
+            if (tries < 10) scheduleMainTitle(gen, tries + 1) else seekDiscStart(gen)
+            return
+        }
+        val main = titles.indices.filter { !titles[it].isMenu }.maxByOrNull { titles[it].duration }
+        if (main != null && main != currentTitle()) {
+            runCatching { player.title = main }
+            dispatch { it.onModesChanged() }
+        }
+        seekDiscStart(gen)
+    }
+
+    /** 本編に切り替わってから、続きの位置へ移る */
+    private fun seekDiscStart(gen: Int) {
+        val ms = discStartMs
+        discStartMs = 0
+        if (ms <= 0) return
+        handler.postDelayed({ if (gen == playGeneration) player.setTime(ms) }, 500)
+    }
+
     // ---------- スリープタイマー ----------
 
     private val sleepTask = Runnable {
@@ -1122,6 +1179,10 @@ class PlaybackService : Service() {
                     return
                 }
                 errorStreak = 0
+                if (discTitlePending == playGeneration) {
+                    discTitlePending = -1
+                    scheduleMainTitle(playGeneration, 0)
+                }
                 if (player.rate != rate) player.rate = rate
                 if (player.volume != volume) player.setVolume(volume)
                 handler.removeCallbacks(saveTask)

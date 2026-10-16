@@ -14,6 +14,8 @@ object MediaFiles {
     val VIDEO_EXT = setOf(
         "mp4", "m4v", "mkv", "webm", "avi", "mov", "wmv", "flv", "f4v", "mpg", "mpeg", "m2v",
         "ts", "m2ts", "mts", "3gp", "3g2", "ogv", "vob", "rm", "rmvb", "asf", "divx", "xvid",
+        // DVD・Blu-ray のディスクイメージ（libVLC の dvdnav・libbluray で再生する）
+        "iso",
     )
 
     val AUDIO_EXT = setOf(
@@ -260,6 +262,46 @@ object MediaFiles {
                         size = c.getLong(sizeCol),
                         folder = c.getString(folderCol) ?: "",
                         dateAdded = c.getLong(dateCol),
+                    )
+                }
+            }
+        } catch (_: Exception) {
+        }
+        // ISO（DVD・Blu-ray のディスクイメージ）は動画として登録されないので、ファイルの一覧から探して加える
+        result += queryDiscImages(context).filter { iso -> result.none { it.path == iso.path } }
+        return result
+    }
+
+    /**
+     * 端末内の ISO ファイル。MediaStore では「動画」ではないので、ファイル全体の一覧から拡張子で探す
+     * （「すべてのファイルへのアクセス」が無いと見つからないことがある）
+     */
+    @Suppress("DEPRECATION")
+    private fun queryDiscImages(context: Context): List<Video> {
+        val collection = MediaStore.Files.getContentUri("external")
+        val result = mutableListOf<Video>()
+        try {
+            context.contentResolver.query(
+                collection,
+                arrayOf(
+                    MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_ADDED,
+                ),
+                "${MediaStore.MediaColumns.DATA} LIKE ?",
+                arrayOf("%.iso"),
+                null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val path = c.getString(1) ?: continue
+                    val file = File(path)
+                    result += Video(
+                        uri = ContentUris.withAppendedId(collection, c.getLong(0)),
+                        path = path,
+                        title = c.getString(2) ?: file.name,
+                        durationMs = 0,
+                        size = c.getLong(3),
+                        folder = file.parentFile?.name.orEmpty(),
+                        dateAdded = c.getLong(4),
                     )
                 }
             }

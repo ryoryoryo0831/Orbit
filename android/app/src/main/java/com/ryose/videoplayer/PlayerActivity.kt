@@ -934,6 +934,9 @@ class PlayerActivity : AppCompatActivity() {
             add(SheetItem(R.drawable.ic_jump, "時間を指定") { showJumpDialog() })
             add(SheetItem(R.drawable.ic_camera, "スクショ") { takeScreenshot() })
             if (s.chapters().isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${s.chapters().size} 個") { showChapters() })
+            // DVD・Blu-ray（ISO）の本編・特典映像などを選ぶ
+            val titleCount = s.titles().size
+            if (titleCount > 1) add(SheetItem(R.drawable.ic_album, "タイトル", "$titleCount 個") { showTitles() })
             if (s.player.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
         }
         val items = buildList {
@@ -1048,6 +1051,28 @@ class PlayerActivity : AppCompatActivity() {
                 formatTime(c.timeOffset),
                 active = i == current,
             ) { s.player.setChapter(i) }
+        }, scrollTo = if (current > 3) current - 2 else -1)
+    }
+
+    /** DVD・Blu-ray のタイトルの一覧（本編・特典映像など）。選ぶとそのタイトルを最初から再生する */
+    private fun showTitles() {
+        val s = svc ?: return
+        val titles = s.titles()
+        if (titles.isEmpty()) return
+        val current = s.currentTitle()
+        ActionSheet.show(this, "タイトル（${titles.size}）", titles.mapIndexed { i, t ->
+            val name = t.name?.takeIf { it.isNotBlank() } ?: "タイトル ${i + 1}"
+            val detail = listOfNotNull(
+                t.duration.takeIf { it > 0 }?.let { formatTime(it) },
+                if (t.isMenu) "メニュー" else null,
+            ).joinToString(" · ")
+            SheetItem(
+                if (i == current) R.drawable.ic_play else R.drawable.ic_movie, name, detail.ifEmpty { null },
+                active = i == current,
+            ) {
+                s.playTitle(i)
+                showInfo(name)
+            }
         }, scrollTo = if (current > 3) current - 2 else -1)
     }
 

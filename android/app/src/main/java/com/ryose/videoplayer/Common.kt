@@ -45,6 +45,10 @@ data class PlaylistItem(
     val isAudio: Boolean
         get() = MediaFiles.isAudioName(path ?: (if (isNetwork) uri.lastPathSegment else null) ?: title)
 
+    /** DVD・Blu-ray のディスクイメージ（ISO）。メニューを出さずに本編から再生する */
+    val isDiscImage: Boolean
+        get() = (path ?: uri.lastPathSegment ?: title).lowercase().endsWith(".iso")
+
     /** ネットワーク上のもの（URL・NAS・DLNA など） */
     val isNetwork: Boolean get() = path == null && uri.scheme !in LOCAL_SCHEMES
 
