@@ -55,6 +55,7 @@
 
     <!-- 全体 -->
     <string name="menu_add_to_favorites">お気に入りに追加</string>
+    <string name="menu_play_folder">このフォルダを再生</string>
     <string name="menu_settings">設定</string>
     <string name="menu_show_as_grid">グリッドで表示</string>
     <string name="limited_access_note">一部の動画だけを表示しています</string>

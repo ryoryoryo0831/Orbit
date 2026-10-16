@@ -152,6 +152,7 @@ class FoldersFragment : BaseListFragment() {
         }
 
         override fun onPrepareMenu(menu: android.view.Menu) {
+            menu.findItem(R.id.action_play_folder)?.isVisible = current is Loc.Local
             val item = menu.findItem(R.id.action_favorite) ?: return
             val loc = current
             item.isVisible = loc != null
@@ -161,8 +162,13 @@ class FoldersFragment : BaseListFragment() {
         }
 
         override fun onMenuItemSelected(menuItem: android.view.MenuItem): Boolean {
-            if (menuItem.itemId != R.id.action_favorite) return false
-            current?.let { toggleFavorite(uriOf(it), labelOf(it)) }
+            when (menuItem.itemId) {
+                R.id.action_play_folder -> (current as? Loc.Local)?.let { loc ->
+                    ActionSheet.show(requireContext(), labelOf(loc), playFolderItems(loc.dir))
+                }
+                R.id.action_favorite -> current?.let { toggleFavorite(uriOf(it), labelOf(it)) }
+                else -> return false
+            }
             return true
         }
     }
@@ -583,10 +589,7 @@ class FoldersFragment : BaseListFragment() {
         return when {
             dir != null -> buildList {
                 if (!row.isStorage) {
-                    add(SheetItem(R.drawable.ic_play, "このフォルダを再生") { withFolderMedia(dir) { requireActivity().playItems(it, 0) } })
-                    add(SheetItem(R.drawable.ic_shuffle, "シャッフル再生") {
-                        withFolderMedia(dir) { requireActivity().playItems(it, it.indices.random(), shuffle = true) }
-                    })
+                    addAll(playFolderItems(dir))
                     add(SheetItem(R.drawable.ic_playlist_add, "プレイリストに追加") {
                         withFolderMedia(dir) { PlaylistDialogs.addToPlaylist(requireContext(), it) }
                     })
@@ -595,7 +598,9 @@ class FoldersFragment : BaseListFragment() {
             }
             id != null && id.startsWith("fav:") -> {
                 val uri = Uri.parse(id.removePrefix("fav:"))
-                listOf(
+                // 端末内のフォルダなら、ここから再生もできる
+                val localDir = uri.takeIf { it.scheme == "file" }?.path?.let { File(it) }?.takeIf { it.isDirectory }
+                localDir?.let { playFolderItems(it) }.orEmpty() + listOf(
                     SheetItem(R.drawable.ic_edit, "表示名を変更") {
                         PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name) { name ->
                             FavoriteFolders(requireContext()).rename(uri, name)
@@ -634,6 +639,44 @@ class FoldersFragment : BaseListFragment() {
     }
 
     /** フォルダ直下の動画・音楽を読み込んでから処理する（空なら知らせる） */
+    /**
+     * フォルダを再生するメニューの項目。サブフォルダがあれば、その中まで全部をまとめて再生する項目も出す
+     */
+    private fun playFolderItems(dir: File): List<SheetItem> = buildList {
+        add(SheetItem(R.drawable.ic_play, "このフォルダを再生") { withFolderMedia(dir) { requireActivity().playItems(it, 0) } })
+        add(SheetItem(R.drawable.ic_shuffle, "シャッフル再生") {
+            withFolderMedia(dir) { requireActivity().playItems(it, it.indices.random(), shuffle = true) }
+        })
+        if (MediaFiles.hasSubfolders(dir)) {
+            add(SheetItem(R.drawable.ic_folder_open, "サブフォルダも含めて再生", "中のフォルダの動画・音楽も、すべてまとめて") {
+                withFolderTree(dir) { requireActivity().playItems(it, 0) }
+            })
+            add(SheetItem(R.drawable.ic_shuffle, "サブフォルダも含めてシャッフル再生") {
+                withFolderTree(dir) { requireActivity().playItems(it, it.indices.random(), shuffle = true) }
+            })
+        }
+    }
+
+    /** フォルダの中と、そのすべてのサブフォルダの中の動画・音楽を集めてから action に渡す（数が多いと時間がかかる） */
+    private fun withFolderTree(dir: File, action: (List<PlaylistItem>) -> Unit) {
+        val ctx = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
+            // すぐに終わらないときだけ、調べていることを知らせる
+            val notice = launch {
+                kotlinx.coroutines.delay(600)
+                Toast.makeText(ctx, "フォルダの中を調べています…", Toast.LENGTH_SHORT).show()
+            }
+            val media = withContext(Dispatchers.IO) { MediaFiles.mediaInTree(ctx, dir) }
+            notice.cancel()
+            if (media.isEmpty()) {
+                Toast.makeText(ctx, "このフォルダとサブフォルダには動画や音楽がありません", Toast.LENGTH_SHORT).show()
+            } else {
+                if (media.size >= 5000) Toast.makeText(ctx, "多すぎるので、最初の 5000 件を再生します", Toast.LENGTH_LONG).show()
+                action(media)
+            }
+        }
+    }
+
     private fun withFolderMedia(dir: File, action: (List<PlaylistItem>) -> Unit) {
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch {

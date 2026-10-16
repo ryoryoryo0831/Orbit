@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- 今いるフォルダを再生（サブフォルダの中も含めるかを選べる） -->
+    <item
+        android:id="@+id/action_play_folder"
+        android:icon="@drawable/ic_play"
+        android:orderInCategory="5"
+        android:title="@string/menu_play_folder"
+        app:showAsAction="ifRoom" />
+
     <item
         android:id="@+id/action_favorite"
         android:icon="@drawable/ic_star_border"

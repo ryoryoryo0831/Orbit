@@ -87,6 +87,59 @@ object MediaFiles {
             .map { PlaylistItem.fromFile(it, durations[it.path] ?: 0) }
     }
 
+    /** サブフォルダがあるか（隠しフォルダは数えない） */
+    fun hasSubfolders(dir: File): Boolean = dir.listFiles()?.any { it.isDirectory && !it.name.startsWith(".") } == true
+
+    /**
+     * フォルダの中と、その中のすべてのサブフォルダの中の動画・音楽。
+     * 並びはファイルの一覧と同じ（フォルダ直下のファイルを名前順に、続けてサブフォルダを名前順に、その中も同じように）。
+     * 隠しフォルダと「.nomedia」のあるフォルダ（アプリのキャッシュなど）は入らない。
+     * 多すぎるときは [limit] 件まで（再生キューが重くなりすぎないように）
+     */
+    fun mediaInTree(context: Context, dir: File, limit: Int = 5000): List<PlaylistItem> {
+        val durations = durationsInTree(context, dir, MediaStore.Video.Media.EXTERNAL_CONTENT_URI) +
+            durationsInTree(context, dir, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+        val result = ArrayList<PlaylistItem>()
+        // 同じフォルダを二度たどらない（リンクで輪になっている場合など）
+        val visited = HashSet<String>()
+        fun walk(d: File, depth: Int) {
+            if (result.size >= limit || depth > 32) return
+            val key = runCatching { d.canonicalPath }.getOrDefault(d.path)
+            if (!visited.add(key)) return
+            val children = visibleChildren(d)
+            if (depth > 0 && children.any { it.name == ".nomedia" }) return
+            children.filter { isMedia(it) }
+                .sortedWith(compareBy(NaturalOrder) { it.name })
+                .forEach { if (result.size < limit) result += PlaylistItem.fromFile(it, durations[it.path] ?: 0) }
+            children.filter { it.isDirectory }
+                .sortedWith(compareBy(NaturalOrder) { it.name })
+                .forEach { walk(it, depth + 1) }
+        }
+        walk(dir, 0)
+        return result
+    }
+
+    /** サブフォルダの中まで含めて、MediaStore に登録されているファイルの長さを取ってくる */
+    @Suppress("DEPRECATION")
+    private fun durationsInTree(context: Context, dir: File, collection: Uri): Map<String, Long> = try {
+        context.contentResolver.query(
+            collection,
+            arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DURATION),
+            "${MediaStore.MediaColumns.DATA} LIKE ? ESCAPE '\\'",
+            arrayOf("${escapeLike(dir.path)}/%"),
+            null,
+        )?.use { c ->
+            buildMap {
+                while (c.moveToNext()) {
+                    val path = c.getString(0) ?: continue
+                    put(path, c.getLong(1))
+                }
+            }
+        } ?: emptyMap()
+    } catch (_: Exception) {
+        emptyMap()
+    }
+
     /** MediaStore に登録されているファイルなら長さが分かるので取ってくる */
     @Suppress("DEPRECATION")
     private fun durationsIn(context: Context, dir: File, collection: Uri): Map<String, Long> = try {
