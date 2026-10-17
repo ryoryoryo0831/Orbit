@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   一覧の行・メニューの行の背景。テレビのリモコン（十字キー）で選んでいる行を、色の付いた枠ではっきり見せる。
-  スマホで指で触るときは選んだ状態にならないので、今までどおり押したときの波紋だけ
+  スマホで指で触るときは選んだ状態にならないので、押したときの波紋だけ。
+  ここでテーマの値（?attr/selectableItemBackground など）を画像として指すと、Android 11 では読めずにアプリが起動しなかった
+  （1.0.82 のテレビ）ので、波紋は色を直接決めて作る
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
@@ -11,5 +13,11 @@
             <corners android:radius="8dp" />
         </shape>
     </item>
-    <item android:drawable="?attr/selectableItemBackground" />
+    <item>
+        <ripple android:color="@color/ripple_neutral">
+            <item android:id="@android:id/mask">
+                <color android:color="#FFFFFFFF" />
+            </item>
+        </ripple>
+    </item>
 </selector>

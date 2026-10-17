@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   アイコンのボタンの背景。テレビのリモコンで選んでいるボタンを、色の付いた枠ではっきり見せる
-  （再生画面の暗い所でも、明るい画面でも見えるように、アクセントの青）
+  （再生画面の暗い所でも、明るい画面でも見えるように、アクセントの青）。
+  押したときは、枠の外まで広がる丸い波紋（マスクの無い ripple）。
+  テーマの値を画像として指すと Android 11 で読めない（bg_focus_row.xml）ので、色を直接決める
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
@@ -13,5 +15,7 @@
             </shape>
         </inset>
     </item>
-    <item android:drawable="?attr/selectableItemBackgroundBorderless" />
+    <item>
+        <ripple android:color="@color/ripple_neutral" />
+    </item>
 </selector>

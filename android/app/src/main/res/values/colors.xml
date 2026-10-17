@@ -12,6 +12,8 @@
     <color name="accent_soft">#1F2F6FE8</color>
     <!-- テレビのリモコンで選んでいる行・ボタンの塗り -->
     <color name="focus_fill">#332F6FE8</color>
+    <!-- 押したときの波紋（明るい画面でも、暗い再生画面でも見える灰色） -->
+    <color name="ripple_neutral">#409E9E9E</color>
     <!--
       Material 3 の色の役割（ボタン・スイッチ・チップ・下のタブの選択中の印・ダイアログなど）。
       指定しないと Material 3 の初期値（紫）になってしまうので、アクセントの青に合わせて全部決めておく
