@@ -42,6 +42,8 @@
         <item name="selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
         <item name="android:selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
         <item name="actionBarItemBackground">@drawable/bg_focus_button</item>
+        <!-- 上のバーのボタン（検索など）は Android 本体の部品なので、本体側の値も（テレビの実機で確認） -->
+        <item name="android:actionBarItemBackground">@drawable/bg_focus_button</item>
     </style>
 
     <!-- 起動中の画面（Android 12 以降のスプラッシュ画面。古い端末でも同じ見た目にする） -->
@@ -98,6 +100,8 @@
         <item name="selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
         <item name="android:selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
         <item name="actionBarItemBackground">@drawable/bg_focus_button</item>
+        <!-- 上のバーのボタン（検索など）は Android 本体の部品なので、本体側の値も（テレビの実機で確認） -->
+        <item name="android:actionBarItemBackground">@drawable/bg_focus_button</item>
         <item name="android:windowBackground">@android:color/black</item>
         <!-- アイコンは白（明るさに関係なく見やすく） -->
         <item name="colorControlNormal">#FFFFFF</item>
