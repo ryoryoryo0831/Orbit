@@ -68,6 +68,11 @@ class PlaybackService : Service() {
         /** キャスト先（Chromecast など）の一覧が変わった */
         fun onRenderersChanged() {}
         /**
+         * MediaPlayer を新しいものに取り替えた（別の曲・動画を開くとき）。
+         * 古いものの映像の出し先は外してあるので、映像を出している画面は新しい [player] につなぎ直す
+         */
+        fun onPlayerReplaced() {}
+        /**
          * 再生できなかった（次へ進めないとき）。画面に表示したら true を返す。
          * どの画面も表示しなければ、トーストを出して再生を終える
          */
@@ -328,8 +333,13 @@ class PlaybackService : Service() {
         abandonFocus()
         releaseWifiLock()
         session.release()
-        player.setEventListener(null)
-        player.release()
+        // 片付けも裏で（再生中に終了した場合は、止める処理も含まれるため）
+        val p = player
+        p.setEventListener(null)
+        runCatching { p.detachViews() }
+        runCatching { if (p.vlcVout.areViewsAttached()) p.vlcVout.detachViews() }
+        vlcWorker.execute { runCatching { p.release() } }
+        vlcWorker.shutdown()
         // VLC の本体（libVLC）は次に開くときのために残しておく（VlcEngine）
         closeFd()
         super.onDestroy()
@@ -346,12 +356,60 @@ class PlaybackService : Service() {
         // 本体はアプリで 1 つ（起動時に裏で作ってある）。設定が変わっていれば作り直される
         libVLC = VlcEngine.obtain(this, options)
         engineOptions = options
-        player = MediaPlayer(libVLC)
-        player.setEventListener(object : MediaPlayer.EventListener {
+        player = newPlayer()
+        dialogCallbacks?.let { Dialog.setCallbacks(libVLC, it) }
+    }
+
+    /** 新しい MediaPlayer（再生の知らせを受け取り、イコライザーを付ける） */
+    private fun newPlayer(): MediaPlayer = MediaPlayer(libVLC).also { p ->
+        p.setEventListener(object : MediaPlayer.EventListener {
             override fun onEvent(event: MediaPlayer.Event) = onPlayerEvent(event)
         })
+        player = p
         applyEqualizer()
-        dialogCallbacks?.let { Dialog.setCallbacks(libVLC, it) }
+        // キャスト中なら、新しいものもキャスト先で再生する
+        renderer?.let { p.setRenderer(it) }
+    }
+
+    /**
+     * 止める・片付けるのに時間がかかる VLC の処理を、画面の処理とは別に 1 本ずつ行う。
+     * テレビ（Fire TV・MediaTek）で、動画の画面を閉じたときの「再生を止める」（libvlc_media_player_stop）が終わらず、
+     * 画面の処理の中で待っていたためにアプリ全体が固まった（ANR）記録があった
+     */
+    private val vlcWorker = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "vlc-retire").apply { isDaemon = true }
+    }
+
+    /**
+     * 今の MediaPlayer を片付けて、新しいものに取り替える（再生を終えるとき）。
+     * 古いものは、画面の処理の中で映像の出し先から外し、止める・片付けるのは裏で行う。
+     * 止めている間に画面から再生位置などを聞くと、VLC の中の鍵を待って同じように固まるので、以後は新しいものだけを使う
+     */
+    private fun retirePlayer(replace: Boolean = true) {
+        val old = player
+        old.setEventListener(null)
+        runCatching { old.detachViews() }
+        runCatching { if (old.vlcVout.areViewsAttached()) old.vlcVout.detachViews() }
+        // エンジンごと作り直すときは、新しいものはそこで作る
+        if (replace) newPlayer()
+        lastRetire = vlcWorker.submit(Runnable {
+            runCatching { old.stop() }
+            runCatching { old.release() }
+        })
+    }
+
+    /** いちばん最近の、古い MediaPlayer を止める処理（終わったかを確かめるため） */
+    @Volatile
+    private var lastRetire: java.util.concurrent.Future<*>? = null
+
+    /**
+     * 古い MediaPlayer が止まるのを少しだけ待つ（裏のスレッドで呼ぶ）。
+     * テレビなどはハードウェアのデコーダーを同時に 1 つしか使えないことが多く、
+     * 古いものが使ったままだと、次の動画がソフトウェアのデコードになって重くなるため。
+     * 止まらないときは待ちすぎずに先へ進む
+     */
+    private fun awaitRetire() {
+        runCatching { lastRetire?.get(RETIRE_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) }
     }
 
     /**
@@ -370,10 +428,8 @@ class PlaybackService : Service() {
         stopRendererDiscovery()
         renderer?.release()
         renderer = null
-        player.setEventListener(null)
-        player.stop()
-        player.release()
-        // 古い本体は VlcEngine が新しいものを作ったあとに片付ける
+        // 古い MediaPlayer は裏で止めて片付ける（retirePlayer）。古い本体は VlcEngine が新しいものを作ったあとに片付ける
+        retirePlayer(replace = false)
         createEngine()
     }
 
@@ -476,8 +532,12 @@ class PlaybackService : Service() {
         preparing = true
         preparingStart = startMs.coerceAtLeast(0)
         preparingPaused = paused
-        // 前の曲・動画は止めておく（準備の間に終わって次へ進んだり、違う曲の位置として記録したりしないように）
-        player.stop()
+        // 前の曲・動画は止めておく（準備の間に終わって次へ進んだり、違う曲の位置として記録したりしないように）。
+        // 止めるのは裏で、MediaPlayer ごと取り替えて行う（テレビなどで止める処理が終わらず、画面が固まらないように）
+        if (player.hasMedia()) {
+            retirePlayer()
+            dispatch { it.onPlayerReplaced() }
+        }
         closeFd()
         lengthMs = 0
         meta = null
@@ -504,7 +564,10 @@ class PlaybackService : Service() {
         dispatch { it.onItemChanged() }
 
         scope.launch {
-            val source = withContext(Dispatchers.IO) { openSource(item) }
+            val source = withContext(Dispatchers.IO) {
+                awaitRetire()
+                openSource(item)
+            }
             if (gen != playGeneration) {
                 // 準備している間に別の曲・動画に変わった（止められた）
                 (source as? Source.Fd)?.let { runCatching { it.pfd.close() } }
@@ -715,12 +778,11 @@ class PlaybackService : Service() {
         playGeneration++
         preparing = false
         lastError = null
-        player.stop()
-        if (renderer != null) {
-            player.setRenderer(null)
-            renderer?.release()
-            renderer = null
-        }
+        // 止めるのは裏で（終わらなくても画面が固まらないように）。キャスト先は新しいものには引き継がない
+        val oldRenderer = renderer
+        renderer = null
+        retirePlayer()
+        oldRenderer?.release()
         items = emptyList()
         order = emptyList()
         index = 0
@@ -1633,6 +1695,8 @@ class PlaybackService : Service() {
     }
 
     companion object {
+        /** 次の曲・動画を始める前に、古い MediaPlayer が止まるのを待つ長さ */
+        private const val RETIRE_WAIT_MS = 1500L
         const val EXTRA_FROM_SESSION = "from_session"
         /** startForegroundService で起こしたことを表す（すぐに常駐を始める必要がある） */
         const val EXTRA_FOREGROUND = "foreground"

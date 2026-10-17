@@ -226,6 +226,14 @@ class PlayerActivity : AppCompatActivity() {
         override fun onPlayerEvent(e: MediaPlayer.Event) = handleEvent(e)
         // 選ばれた動画を読み込んでいる間は、前に再生していたもの（音楽など）の切り替わり・終了で閉じない
         override fun onItemChanged() { if (!loadPending) updateItem() }
+        // 再生サービスが MediaPlayer を取り替えた：映像の出し先を新しいものにつなぎ直す
+        override fun onPlayerReplaced() {
+            val s = svc ?: return
+            if (!viewsAttached) return
+            voutCount = 0
+            s.player.vlcVout.addCallback(surfacesCallback)
+            s.player.attachViews(videoLayout, null, true, false)
+        }
         override fun onModesChanged() = updateModes()
         override fun onPlaybackStopped() { if (!loadPending) finish() }
         override fun onRenderersChanged() = updateModes()

@@ -166,24 +166,11 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         view.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         view.clipToOutline = true
 
-        // 映像の出し先を VLC に直接つなぐ。VLCVideoLayout（player.attachViews）は、画面（Activity）の中でないと
-        // 描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさはここで自分で伝える
-        val vout = service.player.vlcVout
         val subtitles = view.findViewById<android.view.SurfaceView>(R.id.popupSubtitles)
         subtitles.setZOrderMediaOverlay(true)
         subtitles.holder.setFormat(PixelFormat.TRANSLUCENT)
-        // 万一ほかの出し先がつながったままなら外す（つながったまま付けると VLC がエラーにする）
-        if (vout.areViewsAttached()) service.player.detachViews()
-        if (vout.areViewsAttached()) vout.detachViews()
-        vout.setVideoView(view.findViewById<android.view.SurfaceView>(R.id.popupSurface))
-        vout.setSubtitlesView(subtitles)
-        vout.addCallback(surfacesCallback)
-        vout.attachViews(voutLayoutListener)
-        setVoutSize(w, h)
+        attachVout(view, w, h)
         videoFrame.addOnLayoutChangeListener(videoSizeListener)
-        // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
-        service.player.setAspectRatio(null)
-        service.player.setScale(0f)
         service.videoUiAttached = true
         service.addListener(this)
         // 映像は、出し先の準備ができたとき（surfacesCallback）に出す
@@ -192,6 +179,31 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         updateProgress()
         setControlsVisible(true)
         return true
+    }
+
+    /**
+     * 映像の出し先を VLC に直接つなぐ。VLCVideoLayout（player.attachViews）は、画面（Activity）の中でないと
+     * 描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさはここで自分で伝える
+     */
+    private fun attachVout(view: View, width: Int, height: Int) {
+        val vout = service.player.vlcVout
+        // 万一ほかの出し先がつながったままなら外す（つながったまま付けると VLC がエラーにする）
+        if (vout.areViewsAttached()) service.player.detachViews()
+        if (vout.areViewsAttached()) vout.detachViews()
+        vout.setVideoView(view.findViewById<android.view.SurfaceView>(R.id.popupSurface))
+        vout.setSubtitlesView(view.findViewById<android.view.SurfaceView>(R.id.popupSubtitles))
+        vout.addCallback(surfacesCallback)
+        vout.attachViews(voutLayoutListener)
+        setVoutSize(width, height)
+        // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
+        service.player.setAspectRatio(null)
+        service.player.setScale(0f)
+    }
+
+    /** 再生サービスが MediaPlayer を取り替えた（次の動画など）：映像の出し先を新しいものにつなぎ直す */
+    override fun onPlayerReplaced() {
+        val view = root ?: return
+        attachVout(view, videoFrame.width.takeIf { it > 0 } ?: params.width, videoFrame.height.takeIf { it > 0 } ?: params.height)
     }
 
     /** 小窓を閉じる（再生を止めるかどうかは呼び出した側で決める） */
