@@ -80,7 +80,7 @@ object VlcThumbnailer {
             try {
                 if (!onThread(gl) { setupGl() }) return null
                 val s = surface ?: return null
-                val lib = VlcEngine.current(context)
+                val lib = VlcEngine.forThumbnails(context)
                 val mp = MediaPlayer(lib)
                 player = mp
                 // 映像の出し先をつなぐのはメインスレッドで（libVLC の決まり）

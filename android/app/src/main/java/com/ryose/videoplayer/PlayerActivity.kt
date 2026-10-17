@@ -233,6 +233,9 @@ class PlayerActivity : AppCompatActivity() {
             voutCount = 0
             s.player.vlcVout.addCallback(surfacesCallback)
             s.player.attachViews(videoLayout, null, true, false)
+            // 出し先は動画を渡す前から用意できているので、映像の出し直し（ensureVideoTask）は要らない。
+            // 走らせると、開いている途中の動画を 0 秒へ動かして、続きから再生の位置が失われることがある
+            handler.removeCallbacks(ensureVideoTask)
         }
         override fun onModesChanged() = updateModes()
         override fun onPlaybackStopped() { if (!loadPending) finish() }
@@ -781,7 +784,8 @@ class PlayerActivity : AppCompatActivity() {
         val tracks = player.spuTracks ?: emptyArray()
         ActionSheet.show(
             this, "字幕",
-            trackItems(tracks, player.spuTrack, R.drawable.ic_subtitles) { player.setSpuTrack(it) } + listOf(
+            // 選ぶときは、そのときの MediaPlayer に（開いている間に次の動画へ進むと、取り替えられているため）
+            trackItems(tracks, player.spuTrack, R.drawable.ic_subtitles) { svc?.player?.setSpuTrack(it) } + listOf(
                 SheetItem(R.drawable.ic_add, "字幕ファイルを追加") { pickSubtitle.launch(arrayOf("*/*")) },
                 SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.spuDelay)}") { showDelayDialog(subtitle = true) },
             ) + listOfNotNull(
@@ -811,7 +815,7 @@ class PlayerActivity : AppCompatActivity() {
         val tracks = player.audioTracks ?: emptyArray()
         ActionSheet.show(
             this, "音声トラック",
-            trackItems(tracks, player.audioTrack, R.drawable.ic_audiotrack) { player.setAudioTrack(it) } +
+            trackItems(tracks, player.audioTrack, R.drawable.ic_audiotrack) { svc?.player?.setAudioTrack(it) } +
                 SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.audioDelay)}") { showDelayDialog(subtitle = false) },
         )
     }
@@ -820,10 +824,15 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 字幕・音声のずれを 0.1 秒単位で調整するダイアログ */
     private fun showDelayDialog(subtitle: Boolean) {
-        val player = svc?.player ?: return
+        if (svc == null) return
         val dp = resources.displayMetrics.density
-        fun current() = if (subtitle) player.spuDelay else player.audioDelay
+        // そのときの MediaPlayer を使う（開いている間に次の動画へ進むと、取り替えられているため）
+        fun current(): Long {
+            val player = svc?.player ?: return 0L
+            return if (subtitle) player.spuDelay else player.audioDelay
+        }
         fun apply(us: Long) {
+            val player = svc?.player ?: return
             if (subtitle) player.setSpuDelay(us) else player.setAudioDelay(us)
         }
 
@@ -1061,7 +1070,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showVideoTrackMenu() {
         val player = svc?.player ?: return
         val tracks = player.videoTracks ?: return
-        ActionSheet.show(this, "映像トラック", trackItems(tracks, player.videoTrack, R.drawable.ic_movie) { player.setVideoTrack(it) })
+        ActionSheet.show(this, "映像トラック", trackItems(tracks, player.videoTrack, R.drawable.ic_movie) { svc?.player?.setVideoTrack(it) })
     }
 
     /** チャプターの一覧（タップでそこへ移動） */

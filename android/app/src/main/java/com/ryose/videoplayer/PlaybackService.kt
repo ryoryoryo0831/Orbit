@@ -376,7 +376,8 @@ class PlaybackService : Service() {
      * テレビ（Fire TV・MediaTek）で、動画の画面を閉じたときの「再生を止める」（libvlc_media_player_stop）が終わらず、
      * 画面の処理の中で待っていたためにアプリ全体が固まった（ANR）記録があった
      */
-    private val vlcWorker = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+    private val vlcWorker = java.util.concurrent.Executors.newCachedThreadPool { r ->
+        // 1 本ごとに別のスレッドで止める（1 つが終わらなくても、ほかのものは止められるように）
         Thread(r, "vlc-retire").apply { isDaemon = true }
     }
 
@@ -388,10 +389,17 @@ class PlaybackService : Service() {
     private fun retirePlayer(replace: Boolean = true) {
         val old = player
         old.setEventListener(null)
+        // 止め終わるまでの間（終わらないこともある）に、古い曲・動画の音が新しいものと重ならないように
+        runCatching { old.setVolume(0) }
+        runCatching { old.pause() }
         runCatching { old.detachViews() }
         runCatching { if (old.vlcVout.areViewsAttached()) old.vlcVout.detachViews() }
         // エンジンごと作り直すときは、新しいものはそこで作る
-        if (replace) newPlayer()
+        if (replace) {
+            newPlayer()
+            // 映像を出している画面（動画の画面・自由な小窓）に、新しいものへつなぎ直してもらう
+            dispatch { it.onPlayerReplaced() }
+        }
         lastRetire = vlcWorker.submit(Runnable {
             runCatching { old.stop() }
             runCatching { old.release() }
@@ -431,6 +439,7 @@ class PlaybackService : Service() {
         // 古い MediaPlayer は裏で止めて片付ける（retirePlayer）。古い本体は VlcEngine が新しいものを作ったあとに片付ける
         retirePlayer(replace = false)
         createEngine()
+        dispatch { it.onPlayerReplaced() }
     }
 
     /** エンジンを作り直したあとに、同じ動画を同じ位置から開き直すための記録（位置・再生中だったか） */
@@ -534,10 +543,7 @@ class PlaybackService : Service() {
         preparingPaused = paused
         // 前の曲・動画は止めておく（準備の間に終わって次へ進んだり、違う曲の位置として記録したりしないように）。
         // 止めるのは裏で、MediaPlayer ごと取り替えて行う（テレビなどで止める処理が終わらず、画面が固まらないように）
-        if (player.hasMedia()) {
-            retirePlayer()
-            dispatch { it.onPlayerReplaced() }
-        }
+        if (player.hasMedia()) retirePlayer()
         closeFd()
         lengthMs = 0
         meta = null

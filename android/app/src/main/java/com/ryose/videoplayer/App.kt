@@ -21,7 +21,9 @@ import coil.key.Keyer
 import coil.request.Options
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okio.Path.Companion.toOkioPath
 import java.io.File
 
@@ -86,7 +88,7 @@ object ThumbCache {
     private val failed = java.util.Collections.synchronizedSet(HashSet<String>())
 
     /** キャッシュにあればそれを返し、無ければ make で作って保存する */
-    fun getOrCreate(context: Context, key: String, modified: Long, make: () -> Bitmap?): File? {
+    fun getOrCreate(context: Context, key: String, modified: Long, rememberFailure: Boolean = true, make: () -> Bitmap?): File? {
         val file = fileFor(context, key, modified)
         if (file.length() > 0) {
             // 使った印（増えすぎたときに古いものから消すため）。毎回書くと重いので、1 日に 1 回まで
@@ -96,7 +98,7 @@ object ThumbCache {
         }
         if (file.name in failed) return null
         val bitmap = make() ?: run {
-            failed += file.name
+            if (rememberFailure) failed += file.name
             return null
         }
         val scaled = scaleDown(bitmap)
@@ -145,11 +147,20 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         if ((data.path ?: data.uri.toString()).lowercase().endsWith(".iso")) throw IllegalStateException("ディスクイメージ")
         val context = options.context
         val modified = data.path?.let { File(it).lastModified() } ?: 0L
-        val file = ThumbCache.getOrCreate(context, data.path ?: data.uri.toString(), modified) {
-            // Android が読めない形式（WMV・FLV・一部の AVI など）は、VLC で 1 コマを取り出す
-            systemThumbnail(context) ?: frameFromVideo(context) ?: VlcThumbnailer.frame(context, data.path, data.uri)
+        val key = data.path ?: data.uri.toString()
+        val file = ThumbCache.getOrCreate(context, key, modified, rememberFailure = false) {
+            systemThumbnail(context) ?: frameFromVideo(context)
+        } ?: withContext(VLC_DISPATCHER) {
+            // Android が読めない形式（WMV・FLV・一部の AVI など）は、VLC で 1 コマを取り出す。
+            // 時間がかかるので、ほかのサムネイル作りの枠とは別に 1 本ずつ。スクロールして要らなくなったものは始めない
+            coroutineContext.ensureActive()
+            ThumbCache.getOrCreate(context, key, modified) { VlcThumbnailer.frame(context, data.path, data.uri) }
         } ?: throw IllegalStateException("サムネイルを作れませんでした")
         return ThumbCache.source(file)
+    }
+
+    private companion object {
+        val VLC_DISPATCHER = Dispatchers.IO.limitedParallelism(1)
     }
 
     /** Android が作っておいたサムネイル（MediaStore の動画なら速い） */
