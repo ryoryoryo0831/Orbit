@@ -646,6 +646,10 @@ class PlaybackService : Service() {
                 media.addOption(":no-dvdnav-menu")
                 discTitlePending = gen
                 discStartMs = startMs
+            } else {
+                // メニューに映像が無い ISO（本編だけを取り出したものなど）は黒い画面のまま止まるので、そのときは本編へ
+                discMenuWatch = gen
+                discStartMs = startMs
             }
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
@@ -1154,6 +1158,8 @@ class PlaybackService : Service() {
     private var discTitlePending = -1
     /** 本編を選んだあとに移る位置（続きから再生・A-B リピート） */
     private var discStartMs = 0L
+    /** メニューから始めた DVD で、メニューに映像があるかを見る再生（playGeneration の番号。無ければ -1） */
+    private var discMenuWatch = -1
 
     /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
     fun titles(): Array<MediaPlayer.Title> = runCatching { player.titles }.getOrNull() ?: emptyArray()
@@ -1187,6 +1193,24 @@ class PlaybackService : Service() {
     /** DVD のメニューの操作（MediaPlayer.Navigate の上・下・左・右・決定） */
     fun navigate(direction: Int) {
         runCatching { player.navigate(direction) }
+    }
+
+    /**
+     * メニューから始めた DVD で、メニューを表示しているのに映像が 6 秒たっても無いときは、本編を再生する。
+     * 本編だけを取り出した ISO では、メニューのタイトルに映像が無く、黒い画面のまま止まっていた（2026-10-17 にテレビの実機で確認）。
+     * ディスクを開くまで（NAS では CSS の鍵の取得に 15 秒ほどかかることがある）はメニューかどうか分からないので、1 分まで待つ。
+     * 映像が出てきたら見るのをやめる
+     */
+    private fun watchEmptyDiscMenu(gen: Int, tries: Int, emptySeconds: Int) {
+        handler.postDelayed({
+            if (gen != playGeneration || startedWithoutVideo) return@postDelayed
+            if (runCatching { player.videoTracksCount }.getOrDefault(0) > 0) return@postDelayed
+            val empty = if (isInDiscMenu()) emptySeconds + 1 else 0
+            when {
+                empty >= 6 -> chooseMainTitle(gen, 0)
+                tries < 60 -> watchEmptyDiscMenu(gen, tries + 1, empty)
+            }
+        }, 1000)
     }
 
     private fun scheduleMainTitle(gen: Int, tries: Int) {
@@ -1287,6 +1311,10 @@ class PlaybackService : Service() {
                 if (discTitlePending == playGeneration) {
                     discTitlePending = -1
                     scheduleMainTitle(playGeneration, 0)
+                }
+                if (discMenuWatch == playGeneration) {
+                    discMenuWatch = -1
+                    watchEmptyDiscMenu(playGeneration, 0, 0)
                 }
                 if (player.rate != rate) player.rate = rate
                 if (player.volume != volume) player.setVolume(volume)
