@@ -1226,13 +1226,14 @@ class PlayerActivity : AppCompatActivity() {
      * リモコン（Android TV）やキーボードでの操作と、音量ボタンでのブースト。
      * コントロールが隠れているときは、左右でシーク、決定・上下でコントロールを表示する
      */
-    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+    /**
+     * DVD のメニューを表示している間は、リモコン・キーボードの十字キーでメニューを操作する。
+     * onKeyDown より先に受け取る（決定キーは、選ばれている画面全体の touchLayer が先に「クリック」として取ってしまうため）
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         val s0 = svc
-        // エラーの表示中は、十字キーで「再試行」「閉じる」を選べるようにする（シークや操作パネルに取られない）
-        if (errorPanel.visibility == View.VISIBLE && keyCode in DPAD_KEYS) return super.onKeyDown(keyCode, event)
-        // DVD のメニューを表示している間は、リモコン・キーボードの十字キーでメニューを操作する
-        if (dvdPad.visibility == View.VISIBLE && s0 != null) {
-            val direction = when (keyCode) {
+        if (dvdPad.visibility == View.VISIBLE && s0 != null && errorPanel.visibility != View.VISIBLE) {
+            val direction = when (event.keyCode) {
                 android.view.KeyEvent.KEYCODE_DPAD_UP -> MediaPlayer.Navigate.Up
                 android.view.KeyEvent.KEYCODE_DPAD_DOWN -> MediaPlayer.Navigate.Down
                 android.view.KeyEvent.KEYCODE_DPAD_LEFT -> MediaPlayer.Navigate.Left
@@ -1241,11 +1242,20 @@ class PlayerActivity : AppCompatActivity() {
                 else -> null
             }
             if (direction != null) {
-                s0.navigate(direction)
-                handler.postDelayed({ updateDvdPad() }, 400)
+                if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+                    s0.navigate(direction)
+                    handler.postDelayed({ updateDvdPad() }, 400)
+                }
                 return true
             }
         }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        val s0 = svc
+        // エラーの表示中は、十字キーで「再試行」「閉じる」を選べるようにする（シークや操作パネルに取られない）
+        if (errorPanel.visibility == View.VISIBLE && keyCode in DPAD_KEYS) return super.onKeyDown(keyCode, event)
         if (s0 != null && !locked) {
             when (keyCode) {
                 android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_SPACE -> {
