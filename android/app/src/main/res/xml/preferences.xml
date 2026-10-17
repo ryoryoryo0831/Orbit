@@ -159,8 +159,8 @@
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:iconSpaceReserved="false"
-            app:key="hw_decoding"
-            app:summary="オフにすると、映像が乱れる・緑色になるなどの問題が直ることがあります（電池の消費は増えます）。動画ごとに切り替えるには再生画面の「︙」から"
+            app:key="hw_decode"
+            app:summary="オフにすると、映像が乱れる・緑色になる・テレビで止まるなどの問題が直ることがあります（電池の消費は増え、4K などは重くなります）。初期設定はスマホではオン、テレビではオフ。動画ごとに切り替えるには再生画面の「︙」から"
             app:title="ハードウェアデコード" />
         <ListPreference
             app:defaultValue="-1"

@@ -2,6 +2,7 @@ package com.ryose.videoplayer
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import androidx.preference.PreferenceManager
 
 /** 設定画面で変更できる設定（キーは res/xml/preferences.xml と同じ） */
@@ -42,7 +43,34 @@ object AppSettings {
 
     // 再生
     fun resume(c: Context) = bool(c, "resume", true)
-    fun hwDecoding(c: Context) = bool(c, "hw_decoding", true)
+    /**
+     * ハードウェアデコード。初期値はスマホではオン、テレビ（Fire TV・Android TV）ではオフ
+     * （テレビでは、ハードウェアのデコーダーを止める処理が終わらず、アプリが固まったことがあるため）
+     */
+    fun hwDecoding(c: Context): Boolean {
+        ensureHwDecodingDefault(c)
+        return bool(c, KEY_HW_DECODING, !isTv(c))
+    }
+
+    /**
+     * ハードウェアデコードの初期値を書いておく（設定画面を開く前・再生の前に呼ぶ）。
+     * 1.0.76 までの「hw_decoding」は、設定画面を開いただけでオンが保存されているので、名前を変えた。
+     * スマホでは前の選択を引き継ぎ、テレビでは一度だけオフにする
+     */
+    fun ensureHwDecodingDefault(c: Context) {
+        val p = prefs(c)
+        if (p.contains(KEY_HW_DECODING)) return
+        val value = if (isTv(c)) false else p.getBoolean("hw_decoding", true)
+        p.edit().putBoolean(KEY_HW_DECODING, value).apply()
+    }
+
+    const val KEY_HW_DECODING = "hw_decode"
+
+    @Volatile
+    private var tv: Boolean? = null
+
+    /** テレビ（Fire TV・Android TV。リモコンで操作する画面がある端末） */
+    fun isTv(c: Context): Boolean = tv ?: c.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK).also { tv = it }
     /** インターレース解除の設定（-1：自動、0：オフ、1：オン） */
     fun deinterlace(c: Context) = string(c, "deinterlace", "-1")
     fun audioBoost(c: Context) = bool(c, "audio_boost", true)

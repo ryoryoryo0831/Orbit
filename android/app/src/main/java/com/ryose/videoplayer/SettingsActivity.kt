@@ -49,6 +49,8 @@ class SettingsActivity : AppCompatActivity() {
 
     class SettingsFragment : PreferenceFragmentCompat() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            // ハードウェアデコードの初期値は端末で変わる（テレビはオフ）ので、画面に出す前に書いておく
+            AppSettings.ensureHwDecodingDefault(requireContext())
             setPreferencesFromResource(R.xml.preferences, rootKey)
             val ctx = requireContext()
             findPreference<androidx.preference.Preference>("version")?.summary =
