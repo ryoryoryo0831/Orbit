@@ -787,7 +787,7 @@ class PlayerActivity : AppCompatActivity() {
         ActionSheet.show(
             this, "字幕",
             // 選ぶときは、そのときの MediaPlayer に（開いている間に次の動画へ進むと、取り替えられているため）
-            trackItems(tracks, player.spuTrack, R.drawable.ic_subtitles) { svc?.player?.setSpuTrack(it) } + listOf(
+            trackItems(tracks, player.spuTrack, R.drawable.ic_subtitles) { svc?.selectSpuTrack(it) } + listOf(
                 SheetItem(R.drawable.ic_add, "字幕ファイルを追加") { pickSubtitle.launch(arrayOf("*/*")) },
                 SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.spuDelay)}") { showDelayDialog(subtitle = true) },
             ) + listOfNotNull(
@@ -817,7 +817,7 @@ class PlayerActivity : AppCompatActivity() {
         val tracks = player.audioTracks ?: emptyArray()
         ActionSheet.show(
             this, "音声トラック",
-            trackItems(tracks, player.audioTrack, R.drawable.ic_audiotrack) { svc?.player?.setAudioTrack(it) } +
+            trackItems(tracks, player.audioTrack, R.drawable.ic_audiotrack) { svc?.selectAudioTrack(it) } +
                 SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.audioDelay)}") { showDelayDialog(subtitle = false) },
         )
     }

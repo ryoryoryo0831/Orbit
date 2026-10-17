@@ -53,7 +53,7 @@
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back" />
 
-        <TextView
+        <com.ryose.videoplayer.MiddleEllipsisTextView
             android:id="@+id/titleView"
             android:layout_width="0dp"
             android:layout_height="wrap_content"

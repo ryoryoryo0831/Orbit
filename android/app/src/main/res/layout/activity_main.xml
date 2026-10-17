@@ -72,7 +72,7 @@
                 android:layout_weight="1"
                 android:orientation="vertical">
 
-                <TextView
+                <com.ryose.videoplayer.MiddleEllipsisTextView
                     android:id="@+id/miniTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

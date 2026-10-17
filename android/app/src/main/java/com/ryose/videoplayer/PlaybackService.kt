@@ -632,6 +632,11 @@ class PlaybackService : Service() {
         ) {
             media.addOption(":no-mediacodec-dr")
         }
+        if (!item.isAudio) {
+            // 日本語の音声があれば最初から日本語に（あとで切り替えると音が途切れるので。字幕を消すのは applyTrackRule）。
+            // DVD でも dvdnav が音声の言語の好みとして使う
+            media.addOption(":audio-language=ja")
+        }
         if (item.isNetwork) {
             media.addOption(":network-caching=${AppSettings.networkCachingMs(this)}")
             // NAS などでは隣の字幕ファイルをアプリが探せないので、VLC に探してもらう
@@ -1244,6 +1249,73 @@ class PlaybackService : Service() {
         handler.postDelayed({ if (gen == playGeneration) player.setTime(ms) }, 500)
     }
 
+    // ---------- 音声・字幕の選び方 ----------
+
+    /** 動画ごとに手で選んだ音声・字幕のトラック（アプリを閉じるまで覚えておき、開き直したとき＝デコードの切り替えなどに戻す） */
+    private val chosenAudio = mutableMapOf<String, Int>()
+    private val chosenSpu = mutableMapOf<String, Int>()
+
+    /** 再生画面のメニューから音声を選ぶ */
+    fun selectAudioTrack(id: Int) {
+        currentItem?.let { chosenAudio[it.key] = id }
+        runCatching { player.setAudioTrack(id) }
+    }
+
+    /** 再生画面のメニューから字幕を選ぶ（-1 でオフ） */
+    fun selectSpuTrack(id: Int) {
+        currentItem?.let { chosenSpu[it.key] = id }
+        runCatching { player.setSpuTrack(id) }
+    }
+
+    private val trackRule = Runnable { applyTrackRule() }
+
+    /** トラックが増えたり選ばれたりするたびに呼ばれるので、まとめてから選ぶ */
+    private fun scheduleTrackRule() {
+        handler.removeCallbacks(trackRule)
+        handler.postDelayed(trackRule, 300)
+    }
+
+    /**
+     * 日本語の音声がある動画は、音声を日本語に、字幕をオフにする（ISO に限らず。ユーザーの希望）。
+     * 手で選んだものがあればそちらを優先する。字幕はあとから増える（隣の字幕ファイル・DVD の本編に移ったとき）ので、そのたびに見直す。
+     * DVD のメニューのボタン（選んでいる所の色）は字幕の仕組みで出しているので、メニューの間は触らない
+     */
+    private fun applyTrackRule() {
+        val item = currentItem ?: return
+        if (item.isAudio || preparing || isInDiscMenu()) return
+        val p = player
+        val audio = runCatching { p.audioTracks }.getOrNull() ?: return
+        val spu = runCatching { p.spuTracks }.getOrNull() ?: emptyArray()
+        val myAudio = chosenAudio[item.key]
+        val mySpu = chosenSpu[item.key]
+        if (myAudio != null) {
+            if (p.audioTrack != myAudio && audio.any { it.id == myAudio }) p.setAudioTrack(myAudio)
+        }
+        if (mySpu != null) {
+            if (p.spuTrack != mySpu && (mySpu == -1 || spu.any { it.id == mySpu })) p.setSpuTrack(mySpu)
+        }
+        // 音声解説（コメンタリー）は後回し
+        val japanese = audio.filter { it.id != -1 && MediaFiles.isJapaneseTrack(it.name) }
+            .sortedBy { MediaFiles.isCommentaryTrack(it.name) }
+        if (japanese.isEmpty()) return
+        if (myAudio == null && japanese.none { it.id == p.audioTrack }) p.setAudioTrack(japanese.first().id)
+        // 「字幕ファイルを追加」で自分で足した字幕は消さない
+        val addedByUser = addedSubtitles[item.key]?.isNotEmpty() == true
+        if (mySpu == null && !addedByUser && p.spuTrack != -1) p.setSpuTrack(-1)
+    }
+
+    /** DVD の本編などに移ったとき（メニューから出たとき）にも、音声・字幕を見直す */
+    private var wasInDiscMenu = false
+    private val discMenuPoll = object : Runnable {
+        override fun run() {
+            if (currentItem?.isDiscImage != true || !player.hasMedia()) return
+            val inMenu = isInDiscMenu()
+            if (wasInDiscMenu && !inMenu) scheduleTrackRule()
+            wasInDiscMenu = inMenu
+            handler.postDelayed(this, 1000)
+        }
+    }
+
     // ---------- スリープタイマー ----------
 
     private val sleepTask = Runnable {
@@ -1316,6 +1388,11 @@ class PlaybackService : Service() {
                     discMenuWatch = -1
                     watchEmptyDiscMenu(playGeneration, 0, 0)
                 }
+                scheduleTrackRule()
+                if (currentItem?.isDiscImage == true) {
+                    handler.removeCallbacks(discMenuPoll)
+                    handler.post(discMenuPoll)
+                }
                 if (player.rate != rate) player.rate = rate
                 if (player.volume != volume) player.setVolume(volume)
                 handler.removeCallbacks(saveTask)
@@ -1340,6 +1417,8 @@ class PlaybackService : Service() {
                 if (preparing) return
                 updateSession()
             }
+            MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESSelected ->
+                if (e.esChangedType == IMedia.Track.Type.Audio || e.esChangedType == IMedia.Track.Type.Text) scheduleTrackRule()
             MediaPlayer.Event.LengthChanged -> setLength(e.lengthChanged)
             MediaPlayer.Event.TimeChanged -> {
                 if (lengthMs <= 0) setLength(player.length)
@@ -1454,6 +1533,8 @@ class PlaybackService : Service() {
     fun addSubtitle(file: File) {
         val item = currentItem ?: return
         addedSubtitles.getOrPut(item.key) { mutableListOf() }.add(0, file)
+        // 前に字幕を「オフ」にしていても、追加した字幕を出す
+        chosenSpu.remove(item.key)
         player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true)
     }
 
