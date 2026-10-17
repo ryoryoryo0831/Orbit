@@ -553,7 +553,16 @@ class PlaybackService : Service() {
             updateSession()
             return
         }
-        media.setHWDecoderEnabled(hwDecodingFor(item), false)
+        val hw = hwDecodingFor(item)
+        media.setHWDecoderEnabled(hw, false)
+        // MPEG-2・AVCHD などのインターレースの映像は、ハードウェアデコードの「画面に直接描く」モードだと
+        // VLC の横縞を消す処理（インターレース解除）が効かず、動きのある場面で縞が出る。
+        // これらの形式だけは、デコードはハードウェアのまま、絵を VLC に渡して横縞を消してから描く（VLC for Android の「デコードのみ」と同じ）
+        if (hw && !item.isAudio && AppSettings.deinterlace(this) != "0" &&
+            MediaFiles.isLikelyInterlacedName(item.path ?: item.uri.lastPathSegment ?: item.title)
+        ) {
+            media.addOption(":no-mediacodec-dr")
+        }
         if (item.isNetwork) {
             media.addOption(":network-caching=${AppSettings.networkCachingMs(this)}")
             // NAS などでは隣の字幕ファイルをアプリが探せないので、VLC に探してもらう

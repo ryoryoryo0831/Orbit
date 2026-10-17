@@ -114,6 +114,12 @@
                 <data android:scheme="file" />
                 <data android:mimeType="application/x-matroska" />
                 <data android:mimeType="application/mp4" />
+                <!-- WMV・ASF、AVI、FLV、AVCHD（.mts）、ISO を、アプリによってはこの種類名で渡してくる -->
+                <data android:mimeType="application/vnd.ms-asf" />
+                <data android:mimeType="application/x-troff-msvideo" />
+                <data android:mimeType="application/x-flash-video" />
+                <data android:mimeType="model/vnd.mts" />
+                <data android:mimeType="application/x-iso9660-image" />
                 <data android:mimeType="application/x-mpegurl" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
             </intent-filter>

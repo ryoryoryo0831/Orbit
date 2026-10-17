@@ -16,6 +16,9 @@ object AppSettings {
     /** VLC のエンジンに必ず渡すオプション */
     val BASE_VLC_OPTIONS = listOf(
         "--audio-time-stretch",     // 速度を変えても声の高さを変えない
+        // AVI の目次（インデックス）が壊れている・無いときは、聞かずに作り直す
+        // （初期設定では英語の確認が出て再生が止まり、作らないとシークがおかしくなる）
+        "--avi-index=3",
         "--no-sub-autodetect-file", // 字幕の自動読み込みはアプリ側で行う（文字コード変換のため）
         "--http-reconnect",
     )
@@ -40,6 +43,8 @@ object AppSettings {
     // 再生
     fun resume(c: Context) = bool(c, "resume", true)
     fun hwDecoding(c: Context) = bool(c, "hw_decoding", true)
+    /** インターレース解除の設定（-1：自動、0：オフ、1：オン） */
+    fun deinterlace(c: Context) = string(c, "deinterlace", "-1")
     fun audioBoost(c: Context) = bool(c, "audio_boost", true)
     /** 再生画面の向き："auto"（スマホの向きに合わせて自動回転）・"user"（回転ロックに従う）・"video"（動画に合わせる） */
     fun playerOrientation(c: Context) = string(c, "player_orientation", "auto")

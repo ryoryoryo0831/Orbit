@@ -14,6 +14,8 @@ object MediaFiles {
     val VIDEO_EXT = setOf(
         "mp4", "m4v", "mkv", "webm", "avi", "mov", "wmv", "flv", "f4v", "mpg", "mpeg", "m2v",
         "ts", "m2ts", "mts", "3gp", "3g2", "ogv", "vob", "rm", "rmvb", "asf", "divx", "xvid",
+        // ビデオカメラ（AVCHD・HDV・JVC/Panasonic の古い形式）、QuickTime・DV・OGM・MXF
+        "m2t", "mod", "tod", "mpe", "qt", "dv", "ogm", "mxf",
         // DVD・Blu-ray のディスクイメージ（libVLC の dvdnav・libbluray で再生する）
         "iso",
     )
@@ -28,6 +30,13 @@ object MediaFiles {
     fun isAudio(f: File) = f.isFile && f.extension.lowercase() in AUDIO_EXT
 
     fun isMedia(f: File) = isVideo(f) || isAudio(f)
+
+    /**
+     * テレビ録画・DVD・ビデオカメラの映像（MPEG-2・AVCHD など）。インターレース（横縞）のことが多い形式
+     */
+    private val INTERLACED_EXT = setOf("mpg", "mpeg", "mpe", "m2v", "vob", "ts", "m2ts", "mts", "m2t", "mod", "tod", "dv", "iso")
+
+    fun isLikelyInterlacedName(name: String) = name.substringAfterLast('.', "").lowercase() in INTERLACED_EXT
 
     fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in AUDIO_EXT
 
