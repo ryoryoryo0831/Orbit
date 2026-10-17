@@ -44,25 +44,32 @@ object AppSettings {
     // 再生
     fun resume(c: Context) = bool(c, "resume", true)
     /**
-     * ハードウェアデコード。初期値はスマホではオン、テレビ（Fire TV・Android TV）ではオフ
-     * （テレビでは、ハードウェアのデコーダーを止める処理が終わらず、アプリが固まったことがあるため）
+     * ハードウェアデコード。初期値はオン（スマホもテレビも）。
+     * 1.0.82〜1.0.84 ではテレビの初期値をオフにしたが、テレビ（Fire TV・MediaTek・32 ビット）の実機で確かめると、
+     * ソフトウェアでは 4K の HEVC が追いつかずに崩れ、ハードウェアなら正しく再生でき、閉じても固まらなかった
+     * （止める処理は MediaPlayer の取り替えで裏に回してある）ので、オンに戻した
      */
     fun hwDecoding(c: Context): Boolean {
         ensureHwDecodingDefault(c)
-        return bool(c, KEY_HW_DECODING, !isTv(c))
+        return bool(c, KEY_HW_DECODING, true)
     }
 
     /**
      * ハードウェアデコードの初期値を書いておく（設定画面を開く前・再生の前に呼ぶ）。
-     * 1.0.76 までの「hw_decoding」は、設定画面を開いただけでオンが保存されているので、名前を変えた。
-     * スマホでは前の選択を引き継ぎ、テレビでは一度だけオフにする
+     * 1.0.76 までの「hw_decoding」は、設定画面を開いただけでオンが保存されているので、名前を変えた（前の選択を引き継ぐ）。
+     * テレビで 1.0.82〜1.0.84 のときに書いたオフは、一度だけオンに戻す
      */
     fun ensureHwDecodingDefault(c: Context) {
         val p = prefs(c)
-        if (p.contains(KEY_HW_DECODING)) return
-        val value = if (isTv(c)) false else p.getBoolean("hw_decoding", true)
-        p.edit().putBoolean(KEY_HW_DECODING, value).apply()
+        if (!p.contains(KEY_HW_DECODING)) {
+            p.edit().putBoolean(KEY_HW_DECODING, if (isTv(c)) true else p.getBoolean("hw_decoding", true)).apply()
+        }
+        if (isTv(c) && !p.getBoolean(KEY_TV_HW_RESTORED, false)) {
+            p.edit().putBoolean(KEY_HW_DECODING, true).putBoolean(KEY_TV_HW_RESTORED, true).apply()
+        }
     }
+
+    private const val KEY_TV_HW_RESTORED = "tv_hw_decode_restored"
 
     const val KEY_HW_DECODING = "hw_decode"
 
