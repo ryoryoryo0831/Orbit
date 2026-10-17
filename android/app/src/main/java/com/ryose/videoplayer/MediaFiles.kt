@@ -39,14 +39,16 @@ object MediaFiles {
     fun isLikelyInterlacedName(name: String) = name.substringAfterLast('.', "").lowercase() in INTERLACED_EXT
 
     /**
-     * ハードウェアデコードの設定がオンでも、ソフトウェアで再生する形式（WMV・ASF）。
+     * ハードウェアデコードの設定がオンでも、ソフトウェアで再生する形式（WMV・ASF・ISO・AVI）。
      * テレビ（Fire TV・MediaTek）のハードウェアの WMV デコーダー（c2.mtk.wmv3.decoder）では、
      * NAS の WMV9 が真っ黒になった（デコードのエラーが数百回。2026-10-17 に実機で確認）。
      * ソフトウェアなら正しく映り、CPU もほとんど使わない（約 0.15 コア）。動画ごとには︙の「デコード」で切り替えられる。
      * DVD の ISO も同じ：テレビのハードウェアの MPEG-2 デコーダー（c2.mtk.mpeg2.decoder）は、1 コマだけの静止画
-     * （著作権の注意・静止画のメニュー）を出さず、真っ黒のまま進んだ（2026-10-17 に実機で確認。ソフトウェアなら映り、CPU は約 6%）
+     * （著作権の注意・静止画のメニュー）を出さず、真っ黒のまま進んだ（2026-10-17 に実機で確認。ソフトウェアなら映り、CPU は約 6%）。
+     * AVI は、スマホのハードウェアデコードだとカクついた（2026-10-17、ユーザーの報告）。AVI の中身は MPEG-4（DivX・Xvid）や
+     * Motion JPEG などの SD が多く、ソフトウェアでも軽い
      */
-    private val SOFTWARE_DECODE_EXT = setOf("wmv", "asf", "iso")
+    private val SOFTWARE_DECODE_EXT = setOf("wmv", "asf", "iso", "avi")
 
     fun prefersSoftwareDecoding(name: String) = name.substringAfterLast('.', "").lowercase() in SOFTWARE_DECODE_EXT
 
