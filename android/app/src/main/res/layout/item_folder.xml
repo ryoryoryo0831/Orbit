@@ -37,7 +37,8 @@
             android:textColor="@color/text_primary"
             android:textSize="16sp" />
 
-        <TextView
+        <!-- 場所（パス）は末尾のフォルダ名まで見えるように、途中を省く -->
+        <com.ryose.videoplayer.MiddleEllipsisTextView
             android:id="@+id/info"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
