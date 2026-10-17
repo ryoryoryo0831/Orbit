@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  アイコンのボタンの背景。テレビのリモコンで選んでいるボタンを、色の付いた枠ではっきり見せる
+  （再生画面の暗い所でも、明るい画面でも見えるように、アクセントの青）
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <inset android:inset="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="@color/focus_fill" />
+                <stroke android:width="2dp" android:color="@color/accent" />
+                <corners android:radius="12dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:drawable="?attr/selectableItemBackgroundBorderless" />
+</selector>

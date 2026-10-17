@@ -10,6 +10,7 @@
     <color name="text_muted">@color/dark_text_muted</color>
     <!-- アイコンの丸い背景（アクセント色を薄く） -->
     <color name="accent_soft">@color/dark_accent_soft</color>
+    <color name="focus_fill">@color/dark_focus_fill</color>
     <!--
       Material 3 の色の役割（明るいテーマの説明は values/colors.xml）。
       アクセントの青（#4F8CFF）の上の文字は、白だと見づらいので濃い紺にする

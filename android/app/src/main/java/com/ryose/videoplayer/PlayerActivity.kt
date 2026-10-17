@@ -724,6 +724,8 @@ class PlayerActivity : AppCompatActivity() {
         if (ms <= 0 || ms == lengthMs) return
         lengthMs = ms
         seekBar.max = ms.toInt()
+        // リモコンの左右で動かすときは 10 秒ずつ（初期設定では全体の 5%：2 時間の映画なら 6 分も動いていた）
+        seekBar.keyProgressIncrement = 10_000
         timeDuration.text = formatTime(ms)
         abBar.refresh()
     }
@@ -1255,6 +1257,12 @@ class PlayerActivity : AppCompatActivity() {
                 android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> { s0.seekBy(-doubleTapMs); showInfo("${doubleTapMs / 1000}秒戻る"); return true }
                 android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> { s0.next(); return true }
                 android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { s0.previous(); return true }
+                // テレビのリモコンの「メニュー（≡）」で︙のメニュー、字幕・音声のボタンでそれぞれのメニュー
+                android.view.KeyEvent.KEYCODE_MENU -> { showMoreMenu(); return true }
+                android.view.KeyEvent.KEYCODE_CAPTIONS -> { showSubtitleMenu(); return true }
+                android.view.KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK -> { showAudioMenu(); return true }
+                android.view.KeyEvent.KEYCODE_INFO -> { toggleControls(); return true }
+                android.view.KeyEvent.KEYCODE_MEDIA_STOP -> { finish(); return true }
                 android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> if (!controlsVisible) {
                     val forward = keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
                     s0.seekBy(if (forward) 10_000 else -10_000)

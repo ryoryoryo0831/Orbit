@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 再生画面の丸いボタン（押すと少し明るくなる） -->
-<ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="#40FFFFFF">
-    <item>
+<!-- 再生画面の丸いボタン（押すと少し明るくなる。テレビのリモコンで選んでいるときは青い枠） -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
         <shape android:shape="oval">
-            <solid android:color="#73000000" />
+            <solid android:color="#99000000" />
+            <stroke android:width="3dp" android:color="@color/accent" />
         </shape>
     </item>
-</ripple>
+    <item>
+        <ripple android:color="#40FFFFFF">
+            <item>
+                <shape android:shape="oval">
+                    <solid android:color="#73000000" />
+                </shape>
+            </item>
+        </ripple>
+    </item>
+</selector>

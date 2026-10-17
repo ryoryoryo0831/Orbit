@@ -96,7 +96,8 @@
         <item name="android:layout_width">48dp</item>
         <item name="android:layout_height">48dp</item>
         <item name="android:padding">11dp</item>
-        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <!-- テレビのリモコンで選んでいるボタンは青い枠で見せる -->
+        <item name="android:background">@drawable/bg_focus_button</item>
         <item name="android:scaleType">fitCenter</item>
     </style>
 
@@ -157,7 +158,7 @@
         <item name="android:layout_width">36dp</item>
         <item name="android:layout_height">44dp</item>
         <item name="android:padding">9dp</item>
-        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">@drawable/bg_focus_button</item>
         <item name="android:scaleType">fitCenter</item>
         <item name="tint">?attr/colorOnSurface</item>
     </style>

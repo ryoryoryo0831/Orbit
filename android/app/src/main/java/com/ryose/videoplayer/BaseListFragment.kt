@@ -88,6 +88,7 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
         loading.visibility = View.GONE
         adapter.favoriteKeys = favoriteKeys()
         adapter.rows = rows
+        focusFirstRowOnTv(rows)
         if (rows.isEmpty()) {
             emptyText.text = emptyMessage
             emptyIcon.setImageResource(emptyIconRes)
@@ -262,6 +263,22 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
             is Row.Header -> return
         }
         ActionSheet.show(ctx, title, actions, subtitle)
+    }
+
+    private var initialFocusDone = false
+
+    /** テレビのリモコンで、すぐに一覧を選び始められるように、最初の 1 回だけ先頭の行を選んでおく */
+    private fun focusFirstRowOnTv(rows: List<Row>) {
+        if (initialFocusDone || rows.isEmpty() || !AppSettings.isTv(requireContext())) return
+        initialFocusDone = true
+        list.post {
+            val focused = activity?.currentFocus
+            // ほかの所（検索の入力など）を選んでいるときはそのまま
+            if (focused == null || focused === list) {
+                list.findViewHolderForAdapterPosition(rows.indexOfFirst { it !is Row.Header }.coerceAtLeast(0))
+                    ?.itemView?.requestFocus()
+            }
+        }
     }
 
     /** お気に入りを変えたあと、一覧の ★ を付け直す */

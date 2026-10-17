@@ -238,8 +238,19 @@ class AudioPlayerActivity : AppCompatActivity() {
         if (ms <= 0 || ms == lengthMs) return
         lengthMs = ms
         seekBar.max = ms.toInt()
+        // リモコン・キーボードの左右で動かすときは 10 秒ずつ
+        seekBar.keyProgressIncrement = 10_000
         timeDuration.text = formatTime(ms)
         abBar.refresh()
+    }
+
+    /** テレビのリモコンの「メニュー（≡）」で︙のメニュー */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+            showMoreMenu()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     private fun updateItem() {

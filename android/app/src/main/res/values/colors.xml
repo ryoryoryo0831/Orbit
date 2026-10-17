@@ -10,6 +10,8 @@
     <color name="text_muted">#5F6676</color>
     <!-- アイコンの丸い背景（アクセント色を薄く） -->
     <color name="accent_soft">#1F2F6FE8</color>
+    <!-- テレビのリモコンで選んでいる行・ボタンの塗り -->
+    <color name="focus_fill">#332F6FE8</color>
     <!--
       Material 3 の色の役割（ボタン・スイッチ・チップ・下のタブの選択中の印・ダイアログなど）。
       指定しないと Material 3 の初期値（紫）になってしまうので、アクセントの青に合わせて全部決めておく
@@ -50,6 +52,7 @@
     <color name="dark_text_primary">#E8EAF0</color>
     <color name="dark_text_muted">#8A91A0</color>
     <color name="dark_accent_soft">#2E4F8CFF</color>
+    <color name="dark_focus_fill">#4D4F8CFF</color>
     <color name="dark_role_on_primary">#001A41</color>
     <color name="dark_role_primary_container">#1F4A99</color>
     <color name="dark_role_on_primary_container">#D9E2FF</color>

@@ -55,12 +55,9 @@ class ActionSheet private constructor(
     private val tileBg = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerHighest, Color.DKGRAY)
     private val tileBgActive = MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimaryContainer, Color.BLUE)
     private val onTileActive = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnPrimaryContainer, Color.WHITE)
-    private val ripple = TypedValue().also {
-        context.theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true)
-    }.resourceId
-    private val rippleBorderless = TypedValue().also {
-        context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
-    }.resourceId
+    /** 押したときの波紋（テレビのリモコンで選んでいるときは青い枠） */
+    private val ripple = R.drawable.bg_focus_row
+    private val rippleBorderless = R.drawable.bg_focus_button
 
     private val list = RecyclerView(context).apply {
         layoutManager = LinearLayoutManager(context)

@@ -4,7 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/bg_focus_row"
     android:orientation="vertical"
     android:padding="8dp">
 
@@ -89,7 +89,7 @@
             android:layout_width="40dp"
             android:layout_height="48dp"
             android:layout_marginEnd="-8dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/bg_focus_button"
             android:contentDescription="@string/more"
             android:scaleType="center"
             android:src="@drawable/ic_more"
