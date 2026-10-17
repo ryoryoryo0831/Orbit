@@ -127,5 +127,6 @@
         android:layout_height="wrap_content"
         android:background="@color/surface"
         app:labelVisibilityMode="labeled"
-        app:menu="@menu/bottom_nav" />
+        app:itemBackground="@drawable/bg_focus_button"
+            app:menu="@menu/bottom_nav" />
 </LinearLayout>

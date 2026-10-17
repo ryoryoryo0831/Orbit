@@ -36,6 +36,12 @@
         <item name="colorOutlineVariant">@color/role_outline_variant</item>
         <!-- シークバーなど昔ながらの部品の色（初期値は colorSecondary の灰色）。アクセントの青にする -->
         <item name="colorControlActivated">@color/accent</item>
+        <!-- テレビのリモコンで選んでいる所を青い枠で見せる（上のバーのボタン・設定の行など、部品の押したときの背景もこれに） -->
+        <item name="selectableItemBackground">@drawable/bg_focus_row</item>
+        <item name="android:selectableItemBackground">@drawable/bg_focus_row</item>
+        <item name="selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
+        <item name="android:selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
+        <item name="actionBarItemBackground">@drawable/bg_focus_button</item>
     </style>
 
     <!-- 起動中の画面（Android 12 以降のスプラッシュ画面。古い端末でも同じ見た目にする） -->
@@ -86,6 +92,12 @@
         <item name="colorOutlineVariant">@color/dark_role_outline_variant</item>
         <!-- シークバーなど昔ながらの部品の色（初期値は colorSecondary）。アクセントの青にする -->
         <item name="colorControlActivated">@color/dark_accent</item>
+        <!-- テレビのリモコンで選んでいる所を青い枠で見せる（上のバーのボタン・設定の行など、部品の押したときの背景もこれに） -->
+        <item name="selectableItemBackground">@drawable/bg_focus_row</item>
+        <item name="android:selectableItemBackground">@drawable/bg_focus_row</item>
+        <item name="selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
+        <item name="android:selectableItemBackgroundBorderless">@drawable/bg_focus_button</item>
+        <item name="actionBarItemBackground">@drawable/bg_focus_button</item>
         <item name="android:windowBackground">@android:color/black</item>
         <!-- アイコンは白（明るさに関係なく見やすく） -->
         <item name="colorControlNormal">#FFFFFF</item>

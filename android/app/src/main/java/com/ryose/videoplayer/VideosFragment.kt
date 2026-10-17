@@ -69,6 +69,8 @@ class VideosFragment : BaseListFragment() {
         val chips = view.findViewById<ChipGroup>(R.id.chips)
         chips.visibility = View.VISIBLE
         fun chip(label: String, byFolder: Boolean) = Chip(requireContext()).apply {
+            // テレビのリモコンで選んでいるときは青い枠
+            foreground = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.fg_focus_ring)
             id = View.generateViewId()
             text = label
             isCheckable = true

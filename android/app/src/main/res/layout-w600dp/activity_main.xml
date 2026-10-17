@@ -26,6 +26,7 @@
             android:layout_height="match_parent"
             android:background="@color/surface"
             app:labelVisibilityMode="labeled"
+            app:itemBackground="@drawable/bg_focus_button"
             app:menu="@menu/bottom_nav"
             app:menuGravity="center"
             app:paddingTopSystemWindowInsets="false" />

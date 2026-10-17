@@ -48,6 +48,8 @@ class MusicFragment : BaseListFragment() {
         chips.visibility = View.VISIBLE
         Mode.entries.forEach { m ->
             chips.addView(Chip(requireContext()).apply {
+                // テレビのリモコンで選んでいるときは青い枠
+                foreground = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.fg_focus_ring)
                 id = View.generateViewId()
                 text = m.label
                 isCheckable = true
