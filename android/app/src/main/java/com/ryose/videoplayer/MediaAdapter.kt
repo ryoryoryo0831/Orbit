@@ -259,6 +259,11 @@ class MediaAdapter(
                 (holder as HeaderHolder).title.text = row.title
                 holder.itemView.setOnClickListener(null)
                 holder.itemView.setOnLongClickListener(null)
+                // setOnClickListener(null) でも「押せる」扱いになり、テレビのリモコンで見出しが選ばれて
+                // （枠が無いので）どこを選んでいるか分からなくなっていた。見出しは押せない・選べないようにする
+                holder.itemView.isClickable = false
+                holder.itemView.isLongClickable = false
+                holder.itemView.isFocusable = false
             }
             is Row.Folder -> {
                 holder as FolderHolder
@@ -268,6 +273,8 @@ class MediaAdapter(
                 holder.info.text = row.info
                 holder.info.visibility = if (row.info.isEmpty()) View.GONE else View.VISIBLE
                 holder.busy.visibility = if (row.busy) View.VISIBLE else View.GONE
+                // 案内の行はリモコンでも選べないように（ほかの行に使い回されたら選べるように戻す）
+                holder.itemView.isFocusable = !row.busy
                 if (row.busy) {
                     // 案内の行は押せないようにする（押したときの波紋も出さない）
                     holder.itemView.setOnClickListener(null)

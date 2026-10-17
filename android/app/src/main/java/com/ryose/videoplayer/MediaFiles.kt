@@ -38,6 +38,16 @@ object MediaFiles {
 
     fun isLikelyInterlacedName(name: String) = name.substringAfterLast('.', "").lowercase() in INTERLACED_EXT
 
+    /**
+     * ハードウェアデコードの設定がオンでも、ソフトウェアで再生する形式（WMV・ASF）。
+     * テレビ（Fire TV・MediaTek）のハードウェアの WMV デコーダー（c2.mtk.wmv3.decoder）では、
+     * NAS の WMV9 が真っ黒になった（デコードのエラーが数百回。2026-10-17 に実機で確認）。
+     * ソフトウェアなら正しく映り、CPU もほとんど使わない（約 0.15 コア）。動画ごとには︙の「デコード」で切り替えられる
+     */
+    private val SOFTWARE_DECODE_EXT = setOf("wmv", "asf")
+
+    fun prefersSoftwareDecoding(name: String) = name.substringAfterLast('.', "").lowercase() in SOFTWARE_DECODE_EXT
+
     fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in AUDIO_EXT
 
     private fun visibleChildren(dir: File): List<File> =

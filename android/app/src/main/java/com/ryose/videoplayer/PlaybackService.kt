@@ -1024,7 +1024,8 @@ class PlaybackService : Service() {
     /** 動画ごとに「ハードウェア／ソフトウェア」を切り替えたもの（アプリを閉じるまで覚えておく） */
     private val hwOverrides = mutableMapOf<String, Boolean>()
 
-    fun hwDecodingFor(item: PlaylistItem): Boolean = hwOverrides[item.key] ?: AppSettings.hwDecoding(this)
+    fun hwDecodingFor(item: PlaylistItem): Boolean =
+        hwOverrides[item.key] ?: (AppSettings.hwDecoding(this) && !MediaFiles.prefersSoftwareDecoding(item.path ?: item.uri.lastPathSegment ?: item.title))
 
     /** 今の動画のデコード方法を切り替えて、同じ位置から開き直す */
     fun toggleHwDecoding(): Boolean {
