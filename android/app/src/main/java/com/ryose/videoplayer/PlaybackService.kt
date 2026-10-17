@@ -655,6 +655,9 @@ class PlaybackService : Service() {
                 // メニューに映像が無い ISO（本編だけを取り出したものなど）は黒い画面のまま止まるので、そのときは本編へ
                 discMenuWatch = gen
                 discStartMs = startMs
+                // メニューより先に宣伝などが流れるディスクは、メニューへ移る
+                discJumpPending = gen
+                discJumpGen = gen
             }
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
@@ -1165,13 +1168,19 @@ class PlaybackService : Service() {
     private var discStartMs = 0L
     /** メニューから始めた DVD で、メニューに映像があるかを見る再生（playGeneration の番号。無ければ -1） */
     private var discMenuWatch = -1
+    /** メニューから始めた DVD で、メニューより先に流れる宣伝などを飛ばす再生（始めるのを待っている／見ている間。無ければ -1） */
+    private var discJumpPending = -1
+    private var discJumpGen = -1
 
     /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
     fun titles(): Array<MediaPlayer.Title> = runCatching { player.titles }.getOrNull() ?: emptyArray()
 
     fun currentTitle(): Int = runCatching { player.title }.getOrDefault(-1)
 
+    /** 再生画面からタイトル（本編・特典・メニュー）を選ぶ */
     fun playTitle(index: Int) {
+        // 自分で選んだので、宣伝を飛ばしてメニューへ移す処理はやめる
+        discJumpGen = -1
         runCatching { player.title = index }
         dispatch { it.onModesChanged() }
     }
@@ -1197,7 +1206,42 @@ class PlaybackService : Service() {
 
     /** DVD のメニューの操作（MediaPlayer.Navigate の上・下・左・右・決定） */
     fun navigate(direction: Int) {
+        // メニューを操作したら、そのあと本編などへ進んでもメニューへ戻さない
+        discJumpGen = -1
         runCatching { player.navigate(direction) }
+    }
+
+    /**
+     * 「メニューから始める」とき、ディスクがメニューより先に宣伝・予告編・本編などのタイトルを流したら、メニューへ移る。
+     * クリミナル・マインド S3 などは、ディスク自体が最初に「リリース情報」などの宣伝を流す作りで、
+     * メニューが最初に来ないとユーザーから言われた（2026-10-17）。
+     * 著作権の注意などはメニューの仕組みの中で出ることが多い（ドクター・ストレンジ）ので、メニューの間は待つ。
+     * メニューへは VLC のタイトル 0 ＝ libdvdnav のルートメニューの呼び出しで移る（dvdnav.c の DEMUX_SET_TITLE）。
+     * 移れないディスクもある（libdvdnav は First Play の間などはメニューを呼べない）ので、3 回まで試す。
+     * メニューへ移れたら、またはユーザーがメニューを操作した・タイトルを選んだ・メニューに映像が無くて本編にしたらやめる。1 分たったらやめる
+     */
+    private fun jumpToDiscMenu(gen: Int, tries: Int, jumps: Int) {
+        handler.postDelayed({
+            if (gen != playGeneration || discJumpGen != gen) return@postDelayed
+            val titles = titles()
+            val i = currentTitle()
+            val menu = titles.indexOfFirst { it.isMenu }
+            val inTitle = menu >= 0 && i in titles.indices && !titles[i].isMenu
+            var n = jumps
+            when {
+                // メニューへ移れた
+                !inTitle && jumps > 0 && i in titles.indices -> discJumpGen = -1
+                // 3 回試しても移れない
+                inTitle && jumps >= 3 -> discJumpGen = -1
+                inTitle -> {
+                    runCatching { player.title = menu }
+                    dispatch { it.onModesChanged() }
+                    n++
+                }
+            }
+            if (discJumpGen != gen) return@postDelayed
+            if (tries < 60) jumpToDiscMenu(gen, tries + 1, n) else discJumpGen = -1
+        }, 1000)
     }
 
     /**
@@ -1228,6 +1272,8 @@ class PlaybackService : Service() {
      */
     private fun chooseMainTitle(gen: Int, tries: Int) {
         if (gen != playGeneration) return
+        // 本編にしたので、メニューへ戻さない
+        discJumpGen = -1
         val titles = titles()
         if (titles.isEmpty()) {
             if (tries < 10) scheduleMainTitle(gen, tries + 1) else seekDiscStart(gen)
@@ -1387,6 +1433,10 @@ class PlaybackService : Service() {
                 if (discMenuWatch == playGeneration) {
                     discMenuWatch = -1
                     watchEmptyDiscMenu(playGeneration, 0, 0)
+                }
+                if (discJumpPending == playGeneration) {
+                    discJumpPending = -1
+                    jumpToDiscMenu(playGeneration, 0, 0)
                 }
                 scheduleTrackRule()
                 if (currentItem?.isDiscImage == true) {
