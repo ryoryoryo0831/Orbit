@@ -146,7 +146,8 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         val context = options.context
         val modified = data.path?.let { File(it).lastModified() } ?: 0L
         val file = ThumbCache.getOrCreate(context, data.path ?: data.uri.toString(), modified) {
-            systemThumbnail(context) ?: frameFromVideo(context)
+            // Android が読めない形式（WMV・FLV・一部の AVI など）は、VLC で 1 コマを取り出す
+            systemThumbnail(context) ?: frameFromVideo(context) ?: VlcThumbnailer.frame(context, data.path, data.uri)
         } ?: throw IllegalStateException("サムネイルを作れませんでした")
         return ThumbCache.source(file)
     }

@@ -19,6 +19,14 @@ object VlcEngine {
     }
 
     /**
+     * 今ある LibVLC を返す（無ければ今の設定で作る）。作り直しはしない
+     * （サムネイル作りなどで使う。設定が変わっていても、再生中のものを片付けてしまわないように）
+     */
+    fun current(context: Context): LibVLC = synchronized(lock) {
+        instance ?: obtain(context, AppSettings.vlcOptions(context))
+    }
+
+    /**
      * [options] で作った LibVLC を返す（同じオプションのものがあれば使い回す）。
      * 設定が変わってオプションが違うときは作り直し、古いものは片付ける（古いものの MediaPlayer は先に片付けておくこと）
      */
