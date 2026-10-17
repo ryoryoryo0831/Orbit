@@ -107,6 +107,11 @@
         <item name="colorControlNormal">#FFFFFF</item>
     </style>
 
+    <!-- 左に縦に並べるタブ（タブレット・テレビ）の名前。初期の 12sp だと「プレイリスト」が「プレイリス…」と切れた（テレビで確認） -->
+    <style name="TextAppearance.Orbit.RailLabel" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textSize">11sp</item>
+    </style>
+
     <!-- 押しやすい大きさのアイコンボタン（48dp 四方、アイコンは 26dp） -->
     <style name="PlayerButton">
         <item name="android:layout_width">48dp</item>

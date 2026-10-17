@@ -27,6 +27,8 @@
             android:background="@color/surface"
             app:labelVisibilityMode="labeled"
             app:itemBackground="@drawable/bg_focus_button"
+            app:itemTextAppearanceActive="@style/TextAppearance.Orbit.RailLabel"
+            app:itemTextAppearanceInactive="@style/TextAppearance.Orbit.RailLabel"
             app:menu="@menu/bottom_nav"
             app:menuGravity="center"
             app:paddingTopSystemWindowInsets="false" />
