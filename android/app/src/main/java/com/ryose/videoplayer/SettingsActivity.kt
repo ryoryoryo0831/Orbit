@@ -146,9 +146,7 @@ class SettingsActivity : AppCompatActivity() {
                     val found = withContext(Dispatchers.IO) { runCatching { Backup.findInDownloads(ctx) }.getOrDefault(emptyList()) }
                     if (found.isEmpty()) {
                         done(
-                            "「ダウンロード」フォルダに、書き出したファイル（Orbit-backup-…）が見つかりませんでした。
-
-" +
+                            "「ダウンロード」フォルダに、書き出したファイル（Orbit-backup-…）が見つかりませんでした。\n\n" +
                                 "入れ直したあとや、ほかの端末から持ってきたファイルは、「フォルダ」タブで「すべてのファイルへのアクセス」を許可すると見つけられます。",
                         )
                         return@launch
