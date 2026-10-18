@@ -3,27 +3,29 @@ package com.ryose.videoplayer
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
-import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
-import java.io.File
+import kotlinx.coroutines.launch
 
-/** プレイリストの中身（再生・並べ替え・削除） */
+/** プレイリストの中身（再生・並べ替え・削除）。状態と操作は PlaylistViewModel にあり、ここは表示するだけ */
 class PlaylistActivity : AppCompatActivity() {
 
-    private lateinit var store: PlaylistStore
+    private lateinit var vm: PlaylistViewModel
     private lateinit var adapter: MediaAdapter
     private lateinit var listView: RecyclerView
     private lateinit var emptyText: TextView
-    private lateinit var playlistId: String
 
     private val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
         override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
@@ -38,7 +40,7 @@ class PlaylistActivity : AppCompatActivity() {
         override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
             super.clearView(rv, vh)
             // 並べ替えが終わったら保存
-            store.setItems(playlistId, currentItems())
+            vm.setItems(currentItems())
         }
     })
 
@@ -49,8 +51,11 @@ class PlaylistActivity : AppCompatActivity() {
         setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
-        playlistId = intent.getStringExtra(EXTRA_ID) ?: run { finish(); return }
-        store = PlaylistStore(this)
+        vm = ViewModelProvider(this)[PlaylistViewModel::class.java]
+        if (vm.playlistId == null) {
+            finish()
+            return
+        }
         listView = findViewById(R.id.list)
         emptyText = findViewById(R.id.emptyText)
 
@@ -67,28 +72,34 @@ class PlaylistActivity : AppCompatActivity() {
             listView.updatePadding(bottom = bars.bottom)
             insets
         }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect(::render)
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        load()
+        // 再生画面から戻ったとき、視聴位置のバーを更新
+        if (::adapter.isInitialized) adapter.refreshProgress()
     }
 
-    private fun load() {
-        val p = store.get(playlistId) ?: run { finish(); return }
-        supportActionBar?.title = p.name
-        // 全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」で数える
-        val unit = when {
-            p.items.isNotEmpty() && p.items.all { it.isAudio } -> "曲"
-            p.items.none { it.isAudio } -> "本"
-            else -> "件"
+    private fun render(s: PlaylistViewModel.UiState) {
+        if (!s.loaded) return
+        if (s.missing) {
+            finish()
+            return
         }
-        supportActionBar?.subtitle = "${p.items.size} $unit"
-        adapter.rows = p.items.map { Row.Media(it, it.path?.let { path -> File(path).parentFile?.name }.orEmpty()) }
-        emptyText.isVisible = p.items.isEmpty()
-        if (playlistId == FavoriteMedia.PLAYLIST_ID) {
+        supportActionBar?.title = s.name
+        supportActionBar?.subtitle = s.subtitle
+        adapter.rows = s.rows
+        emptyText.isVisible = s.rows.isEmpty()
+        if (s.isFavorites) {
             emptyText.text = "お気に入りはまだありません。\n\n動画や曲を長押しして\n「お気に入りに追加」を選ぶと、ここに入ります。"
         }
+        invalidateOptionsMenu()
     }
 
     private fun currentItems() = adapter.rows.filterIsInstance<Row.Media>().map { it.item }
@@ -100,7 +111,7 @@ class PlaylistActivity : AppCompatActivity() {
 
     private fun onRowLongClick(position: Int) {
         val item = currentItems().getOrNull(position) ?: return
-        val isFavorites = playlistId == FavoriteMedia.PLAYLIST_ID
+        val isFavorites = vm.state.value.isFavorites
         ActionSheet.show(
             this, item.title,
             listOf(
@@ -109,13 +120,8 @@ class PlaylistActivity : AppCompatActivity() {
                     if (isFavorites) R.drawable.ic_star_border else R.drawable.ic_delete,
                     if (isFavorites) "お気に入りから外す" else "プレイリストから外す",
                 ) {
-                    val before = currentItems()
-                    store.setItems(playlistId, before.filterIndexed { i, _ -> i != position })
-                    load()
-                    showUndo(if (isFavorites) "お気に入りから外しました" else "プレイリストから外しました") {
-                        store.setItems(playlistId, before)
-                        load()
-                    }
+                    val before = vm.removeAt(currentItems(), position)
+                    showUndo(if (isFavorites) "お気に入りから外しました" else "プレイリストから外しました") { vm.setItems(before) }
                 },
                 SheetItem(R.drawable.ic_playlist_add, "ほかのプレイリストに追加") { PlaylistDialogs.addToPlaylist(this, listOf(item)) },
             ),
@@ -124,7 +130,7 @@ class PlaylistActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         // お気に入りは名前の変更・削除はできない
-        val fixed = playlistId == FavoriteMedia.PLAYLIST_ID
+        val fixed = vm.playlistId == FavoriteMedia.PLAYLIST_ID
         menu.findItem(R.id.action_rename)?.isVisible = !fixed
         menu.findItem(R.id.action_delete)?.isVisible = !fixed
         return super.onPrepareOptionsMenu(menu)
@@ -140,12 +146,9 @@ class PlaylistActivity : AppCompatActivity() {
         when (item.itemId) {
             R.id.action_play_all -> playItems(items, 0)
             R.id.action_shuffle_play -> if (items.isNotEmpty()) playItems(items, items.indices.random(), shuffle = true)
-            R.id.action_rename -> PlaylistDialogs.promptName(this, "名前を変更", supportActionBar?.title?.toString().orEmpty()) {
-                store.rename(playlistId, it)
-                load()
-            }
+            R.id.action_rename -> PlaylistDialogs.promptName(this, "名前を変更", vm.state.value.name) { vm.rename(it) }
             R.id.action_delete -> PlaylistDialogs.confirm(this, "このプレイリストを削除しますか？\n（動画ファイルは削除されません）", "削除") {
-                store.delete(playlistId)
+                vm.delete()
                 finish()
             }
             else -> return super.onOptionsItemSelected(item)

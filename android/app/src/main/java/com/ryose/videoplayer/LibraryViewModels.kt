@@ -104,3 +104,65 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun restore(p: SavedPlaylist, index: Int) = store.restore(p, index)
 }
+
+/**
+ * プレイリストの画面（PlaylistActivity）の状態と操作。開いているプレイリストの id は画面を開いたときの Intent から
+ * （SavedStateHandle に入ってくる）。PlaylistStore.changes を見張るので、ほかで変わっても表示が合う
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class PlaylistViewModel(app: Application, saved: androidx.lifecycle.SavedStateHandle) : AndroidViewModel(app) {
+
+    data class UiState(
+        /** まだ読んでいない */
+        val loaded: Boolean = false,
+        /** プレイリストが無くなった（削除された）。画面を閉じる */
+        val missing: Boolean = false,
+        val name: String = "",
+        val subtitle: String = "",
+        val rows: List<Row> = emptyList(),
+        val isFavorites: Boolean = false,
+    )
+
+    val playlistId: String? = saved.get<String>(PlaylistActivity.EXTRA_ID)
+    private val store = PlaylistStore(app)
+
+    val state: StateFlow<UiState> = PlaylistStore.changes
+        .mapLatest { build() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+
+    private suspend fun build(): UiState = withContext(Dispatchers.Default) {
+        val p = playlistId?.let { store.get(it) } ?: return@withContext UiState(loaded = true, missing = true)
+        // 全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」で数える
+        val unit = when {
+            p.items.isNotEmpty() && p.items.all { it.isAudio } -> "曲"
+            p.items.none { it.isAudio } -> "本"
+            else -> "件"
+        }
+        UiState(
+            loaded = true,
+            name = p.name,
+            subtitle = "${p.items.size} $unit",
+            rows = p.items.map { Row.Media(it, it.path?.let { path -> File(path).parentFile?.name }.orEmpty()) },
+            isFavorites = p.id == FavoriteMedia.PLAYLIST_ID,
+        )
+    }
+
+    /** 並べ替えた順番で保存する */
+    fun setItems(items: List<PlaylistItem>) {
+        playlistId?.let { store.setItems(it, items) }
+    }
+
+    /** 1 件外す。「元に戻す」で使う、外す前の一覧を返す */
+    fun removeAt(items: List<PlaylistItem>, position: Int): List<PlaylistItem> {
+        setItems(items.filterIndexed { i, _ -> i != position })
+        return items
+    }
+
+    fun rename(name: String) {
+        playlistId?.let { store.rename(it, name) }
+    }
+
+    fun delete() {
+        playlistId?.let { store.delete(it) }
+    }
+}

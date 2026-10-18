@@ -26,7 +26,9 @@ import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.navigation.NavigationBarView
 import coil.dispose
@@ -34,7 +36,6 @@ import coil.load
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.videolan.libvlc.MediaPlayer
 
 class MainActivity : AppCompatActivity() {
 
@@ -51,26 +52,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniProgress: com.google.android.material.progressindicator.LinearProgressIndicator
     private var miniArtKey: String? = null
 
-    private val miniListener = object : PlaybackService.Listener {
-        override fun onPlayerEvent(e: MediaPlayer.Event) {
-            when (e.type) {
-                MediaPlayer.Event.Playing, MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> updateMini()
-                MediaPlayer.Event.TimeChanged -> updateMiniProgress()
-            }
-        }
-        override fun onItemChanged() = updateMini()
-        override fun onPlaybackStopped() = updateMini()
-    }
-
-    /** 再生サービスが動いているときだけつながる */
-    private val connection = PlaybackConnection(
-        this, autoCreate = false,
-        onConnected = { s ->
-            s.addListener(miniListener)
-            updateMini()
-        },
-        onDisconnected = { updateMini() },
-    )
+    /** ミニプレイヤーの状態と操作（再生サービスの「今再生しているもの」を見る） */
+    private lateinit var nowPlaying: NowPlayingViewModel
 
     // 許可の結果は各タブの onResume で確認して読み込み直す
     private val permissionLauncher =
@@ -158,15 +141,16 @@ class MainActivity : AppCompatActivity() {
         miniSubtitle = findViewById(R.id.miniSubtitle)
         miniPlay = findViewById(R.id.miniPlay)
         miniProgress = findViewById(R.id.miniProgress)
-        miniPlayer.setOnClickListener { connection.service?.let { startActivity(it.screenIntent()) } }
-        miniPlay.setOnClickListener { connection.service?.togglePlay() }
-        findViewById<View>(R.id.miniNext).setOnClickListener { connection.service?.next() }
-        findViewById<View>(R.id.miniClose).setOnClickListener { connection.service?.stopPlayback() }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        connection.bind()
+        nowPlaying = ViewModelProvider(this)[NowPlayingViewModel::class.java]
+        miniPlayer.setOnClickListener { nowPlaying.screenIntent()?.let { startActivity(it) } }
+        miniPlay.setOnClickListener { nowPlaying.togglePlay() }
+        findViewById<View>(R.id.miniNext).setOnClickListener { nowPlaying.next() }
+        findViewById<View>(R.id.miniClose).setOnClickListener { nowPlaying.stop() }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nowPlaying.state.collect(::renderMini)
+            }
+        }
     }
 
     override fun onResume() {
@@ -189,28 +173,23 @@ class MainActivity : AppCompatActivity() {
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    override fun onStop() {
-        super.onStop()
-        connection.service?.removeListener(miniListener)
-        connection.unbind()
-    }
-
-    private fun updateMini() {
-        val s = connection.service
-        val item = s?.currentItem
-        if (item == null) {
+    private fun renderMini(np: PlaybackService.NowPlaying?) {
+        if (np == null) {
             miniPlayer.visibility = View.GONE
             miniArtKey = null
             return
         }
+        val item = np.item
         miniPlayer.visibility = View.VISIBLE
-        miniTitle.text = s.displayTitle()
-        miniSubtitle.text = s.displaySubtitle().ifEmpty { if (item.isAudio) "" else "動画" }
+        miniTitle.text = np.title
+        miniSubtitle.text = np.subtitle.ifEmpty { if (item.isAudio) "" else "動画" }
         miniSubtitle.visibility = if (miniSubtitle.text.isEmpty()) View.GONE else View.VISIBLE
-        miniPlay.setImageResource(if (s.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-        updateMiniProgress()
+        miniPlay.setImageResource(if (np.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        // ミニプレイヤーの上の細いバー（再生位置）
+        val len = np.lengthMs
+        miniProgress.progress = if (len > 0) (np.positionMs * 1000 / len).toInt().coerceIn(0, 1000) else 0
         // 画像は曲が変わったときだけ読み込み直す
-        val art = s.meta?.art
+        val art = np.art
         val key = item.key + (if (art != null) "#art" else "")
         if (key != miniArtKey) {
             miniArtKey = key
@@ -250,13 +229,6 @@ class MainActivity : AppCompatActivity() {
         miniPlayer.isVisible -> miniPlayer
         bottomNav is com.google.android.material.bottomnavigation.BottomNavigationView && bottomNav.isVisible -> bottomNav
         else -> null
-    }
-
-    /** ミニプレイヤーの上の細いバー（再生位置） */
-    private fun updateMiniProgress() {
-        val s = connection.service ?: return
-        val len = s.lengthMs
-        miniProgress.progress = if (len > 0) (s.position * 1000 / len).toInt().coerceIn(0, 1000) else 0
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

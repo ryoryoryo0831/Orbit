@@ -36,6 +36,9 @@ import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,6 +98,18 @@ class PlaybackService : Service() {
 
     /** 曲の情報（音楽ファイルに埋め込まれたタイトル・アーティスト・ジャケット） */
     data class TrackMeta(val title: String?, val artist: String?, val album: String?, val art: Bitmap?)
+
+    /** 画面に出す「今再生しているもの」（PlaybackService.nowPlaying） */
+    data class NowPlaying(
+        val item: PlaylistItem,
+        val title: String,
+        val subtitle: String,
+        val isPlaying: Boolean,
+        val positionMs: Long,
+        val lengthMs: Long,
+        /** 曲のジャケット（無ければ null） */
+        val art: Bitmap?,
+    )
 
     inner class LocalBinder : Binder() {
         val service: PlaybackService get() = this@PlaybackService
@@ -418,6 +433,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         hasQueue = false
+        _nowPlaying.value = null
         popup?.dismiss()
         savePosition()
         // OS に止められた場合も、押しても何も起きない通知を残さない
@@ -575,7 +591,20 @@ class PlaybackService : Service() {
         listeners -= l
     }
 
-    private fun dispatch(action: (Listener) -> Unit) = listeners.toList().forEach(action)
+    private fun dispatch(action: (Listener) -> Unit) {
+        listeners.toList().forEach(action)
+        // 画面に知らせることがあったら、「今再生しているもの」も新しくする
+        publishNowPlaying()
+    }
+
+    /** 画面が見る「今再生しているもの」を新しくする（同じ中身なら StateFlow は知らせない） */
+    private fun publishNowPlaying() {
+        if (!::player.isInitialized) return
+        val item = currentItem
+        _nowPlaying.value = item?.let {
+            NowPlaying(it, displayTitle(), displaySubtitle(), isPlaying, position, lengthMs, meta?.art)
+        }
+    }
 
     private fun prefs() = getSharedPreferences("player", MODE_PRIVATE)
 
@@ -1802,6 +1831,13 @@ class PlaybackService : Service() {
     }
 
     companion object {
+        private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
+        /**
+         * 今再生しているもの（再生していなければ null）。再生サービスが唯一の情報源で、
+         * 画面（ミニプレイヤーなど）は NowPlayingViewModel を通してこれを見る
+         */
+        val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
+
         /** 次の曲・動画を始める前に、古い MediaPlayer が止まるのを待つ長さ */
         private const val RETIRE_WAIT_MS = 1500L
         const val EXTRA_FROM_SESSION = "from_session"
