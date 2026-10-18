@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 再生画面。画面（Activity）の土台がもともと FrameLayout なので、merge でその中に直接並べる -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <org.videolan.libvlc.util.VLCVideoLayout
         android:id="@+id/videoLayout"
@@ -494,4 +493,4 @@
         android:textColor="#FFFFFF"
         android:textSize="18sp"
         android:visibility="gone" />
-</FrameLayout>
+</merge>
