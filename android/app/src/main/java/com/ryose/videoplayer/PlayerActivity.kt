@@ -50,7 +50,9 @@ import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +91,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repeatButton: ImageButton
     private lateinit var unlockButton: ImageButton
     private lateinit var abBar: AbRepeatBar
+    /** 再生位置などの表示に使う、再生サービスの「今再生しているもの」 */
+    private lateinit var nowPlaying: NowPlayingViewModel
     /** DVD のメニュー用の十字キー（DvdPad.kt） */
     private lateinit var dvdPad: DvdPad
     /** 字幕・音声・映像トラックのメニュー（TrackMenus.kt） */
@@ -319,6 +323,12 @@ class PlayerActivity : AppCompatActivity() {
         )
         timeCurrent = findViewById(R.id.timeCurrent)
         timeDuration = findViewById(R.id.timeDuration)
+        nowPlaying = ViewModelProvider(this)[NowPlayingViewModel::class.java]
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nowPlaying.state.collect(::renderProgress)
+            }
+        }
         playButton = findViewById(R.id.playButton)
         nextButton = findViewById(R.id.nextButton)
         speedButton = findViewById(R.id.speedButton)
@@ -588,15 +598,7 @@ class PlayerActivity : AppCompatActivity() {
             }
             // 次へ進む・エラーを表示するのはサービスからの知らせで行う
             MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> hideLoading()
-            MediaPlayer.Event.LengthChanged -> setLength(e.lengthChanged)
-            MediaPlayer.Event.TimeChanged -> {
-                if (lengthMs <= 0) svc?.let { setLength(it.lengthMs) }
-                if (!userSeeking) {
-                    seekBar.progress = e.timeChanged.toInt()
-                    // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
-                    timeCurrent.setTextIfChanged(formatTime(e.timeChanged))
-                }
-            }
+            // 再生位置・長さの表示は、再生サービスの「今再生しているもの」から（renderProgress）
             MediaPlayer.Event.Vout -> {
                 voutCount = e.voutCount
                 if (voutCount > 0) handler.removeCallbacks(ensureVideoTask)
@@ -710,6 +712,21 @@ class PlayerActivity : AppCompatActivity() {
         castInfo.isVisible = cast != null
         castInfo.text = cast?.let { "${it.displayName ?: it.name} で再生中" }
         updatePipParams()
+    }
+
+    /**
+     * 再生位置と長さを表示する（再生サービスの「今再生しているもの」が変わるたびに）。
+     * 一時停止で操作パネルを出す・映像が出たなど、一度だけ起きることは handleEvent で受け取る
+     */
+    private fun renderProgress(np: PlaybackService.NowPlaying?) {
+        // 開かれた動画の読み込みが済むまでは、前に再生していたものの位置を出さない
+        if (np == null || svc == null || loadPending) return
+        setLength(np.lengthMs)
+        if (!userSeeking) {
+            seekBar.progress = np.positionMs.toInt()
+            // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
+            timeCurrent.setTextIfChanged(formatTime(np.positionMs))
+        }
     }
 
     private fun setLength(ms: Long) {

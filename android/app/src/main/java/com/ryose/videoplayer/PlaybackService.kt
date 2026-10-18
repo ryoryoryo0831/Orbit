@@ -109,6 +109,14 @@ class PlaybackService : Service() {
         val lengthMs: Long,
         /** 曲のジャケット（無ければ null） */
         val art: Bitmap?,
+        val shuffle: Boolean = false,
+        val repeat: Repeat = Repeat.OFF,
+        val rate: Float = 1f,
+        /** スリープタイマーで止める時刻（0 なら未設定） */
+        val sleepAt: Long = 0L,
+        /** 今の曲・動画が終わったら止める */
+        val sleepAtEnd: Boolean = false,
+        val hasNext: Boolean = false,
     )
 
     inner class LocalBinder : Binder() {
@@ -602,7 +610,10 @@ class PlaybackService : Service() {
         if (!::player.isInitialized) return
         val item = currentItem
         _nowPlaying.value = item?.let {
-            NowPlaying(it, displayTitle(), displaySubtitle(), isPlaying, position, lengthMs, meta?.art)
+            NowPlaying(
+                it, displayTitle(), displaySubtitle(), isPlaying, position, lengthMs, meta?.art,
+                shuffle, repeat, rate, sleepAt, sleepAtEnd, hasNext(),
+            )
         }
     }
 
@@ -869,6 +880,7 @@ class PlaybackService : Service() {
         rate = r
         player.rate = r
         updateSession()
+        publishNowPlaying()
     }
 
     /**

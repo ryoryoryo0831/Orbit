@@ -16,12 +16,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.videolan.libvlc.MediaPlayer
 
 /** 音楽の再生画面（ジャケット・曲名・再生操作） */
 class AudioPlayerActivity : AppCompatActivity() {
@@ -48,25 +50,23 @@ class AudioPlayerActivity : AppCompatActivity() {
     private var readyGeneration = 0
     private var userSeeking = false
     private var lengthMs = 0L
+    /** 曲・動画・ジャケットが変わったときだけ画像を出し直す */
+    private var shownArtKey: String? = null
+    /** 開かれた曲の読み込みが済んで、表示してよい（済むまでは、前に再生していたものを出さない） */
+    private var ready = false
 
+    /** 表示する状態（再生サービスの「今再生しているもの」）。操作は svc に頼む */
+    private lateinit var nowPlaying: NowPlayingViewModel
+
+    // 表示は nowPlaying の状態から。ここでは A-B リピートの見直しと、再生が終わったときに閉じることだけ
     private val listener = object : PlaybackService.Listener {
-        override fun onPlayerEvent(e: MediaPlayer.Event) {
-            when (e.type) {
-                MediaPlayer.Event.Playing, MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> updatePlayButton()
-                MediaPlayer.Event.LengthChanged -> setLength(e.lengthChanged)
-                MediaPlayer.Event.TimeChanged -> {
-                    if (lengthMs <= 0) svc?.let { setLength(it.lengthMs) }
-                    if (!userSeeking) {
-                        seekBar.progress = e.timeChanged.toInt()
-                        // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
-                        timeCurrent.setTextIfChanged(formatTime(e.timeChanged))
-                    }
-                }
-            }
+        override fun onItemChanged() {
+            // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
+            abBar.refresh()
+            svc?.takeAbRestoredMessage()?.let { Toast.makeText(this@AudioPlayerActivity, it, Toast.LENGTH_LONG).show() }
         }
 
-        override fun onItemChanged() = updateItem()
-        override fun onModesChanged() = updateModes()
+        override fun onModesChanged() = abBar.refresh()
         override fun onPlaybackStopped() = finish()
     }
 
@@ -121,7 +121,7 @@ class AudioPlayerActivity : AppCompatActivity() {
         nextButton.setOnClickListener { svc?.next() }
         shuffleButton.setOnClickListener { svc?.toggleShuffle() }
         repeatButton.setOnClickListener { svc?.cycleRepeat() }
-        speedButton.setOnClickListener { svc?.let { s -> PlayerDialogs.showSpeed(this, s) { updateModes() } } }
+        speedButton.setOnClickListener { svc?.let { s -> PlayerDialogs.showSpeed(this, s) { render(nowPlaying.state.value) } } }
         timerButton.setOnClickListener { svc?.let { PlayerDialogs.showSleepTimer(this, it) } }
         findViewById<View>(R.id.eqButton).setOnClickListener { svc?.let { PlayerDialogs.showEqualizer(this, it) } }
         findViewById<View>(R.id.queueButton).setOnClickListener { svc?.let { PlayerDialogs.showQueue(this, it) } }
@@ -143,6 +143,13 @@ class AudioPlayerActivity : AppCompatActivity() {
 
         // 選んだ曲を読み込む前に画面が作り直された（回転など）ときも、その曲を再生する
         if (savedInstanceState == null || savedInstanceState.getBoolean(STATE_PENDING_LOAD)) takeLoadFrom(intent)
+
+        nowPlaying = ViewModelProvider(this)[NowPlayingViewModel::class.java]
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nowPlaying.state.collect(::render)
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -161,6 +168,7 @@ class AudioPlayerActivity : AppCompatActivity() {
     private fun takeLoadFrom(intent: Intent) {
         if (intent.safeBooleanExtra(PlaybackService.EXTRA_FROM_SESSION)) return
         loadIntent = intent
+        ready = false
     }
 
     override fun onStart() {
@@ -221,17 +229,48 @@ class AudioPlayerActivity : AppCompatActivity() {
     }
 
     private fun refreshAll() {
-        val s = svc ?: return
-        updateItem()
-        lengthMs = 0
-        setLength(s.lengthMs)
-        if (!userSeeking) {
-            val t = s.position
-            seekBar.progress = t.toInt()
-            timeCurrent.text = formatTime(t)
+        svc?.let { s ->
+            abBar.refresh()
+            s.takeAbRestoredMessage()?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
         }
-        updatePlayButton()
-        updateModes()
+        ready = true
+        lengthMs = 0
+        shownArtKey = null
+        render(nowPlaying.state.value)
+    }
+
+    /** 再生サービスの「今再生しているもの」を表示する */
+    private fun render(np: PlaybackService.NowPlaying?) {
+        if (!ready || np == null) return
+        val item = np.item
+        titleView.text = np.title
+        subtitleView.text = np.subtitle
+        val artKey = item.key + (if (np.art != null) "#art" else "")
+        if (artKey != shownArtKey) {
+            shownArtKey = artKey
+            val bitmap = np.art
+            if (bitmap != null) {
+                art.setPadding(0, 0, 0, 0)
+                art.alpha = 1f
+                art.scaleType = ImageView.ScaleType.CENTER_CROP
+                art.setImageBitmap(bitmap)
+            } else {
+                val pad = (artCard.layoutParams.width / 4).coerceAtLeast(0)
+                art.setPadding(pad, pad, pad, pad)
+                art.alpha = 0.4f
+                art.scaleType = ImageView.ScaleType.FIT_CENTER
+                art.setImageResource(if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie)
+            }
+        }
+        setLength(np.lengthMs)
+        if (!userSeeking) {
+            seekBar.progress = np.positionMs.toInt()
+            // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
+            timeCurrent.setTextIfChanged(formatTime(np.positionMs))
+        }
+        playButton.setImageResource(if (np.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        playButton.contentDescription = getString(if (np.isPlaying) R.string.player_pause else R.string.player_play)
+        renderModes(np)
     }
 
     private fun setLength(ms: Long) {
@@ -253,38 +292,6 @@ class AudioPlayerActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun updateItem() {
-        val s = svc ?: return
-        // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
-        abBar.refresh()
-        s.takeAbRestoredMessage()?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
-        val item = s.currentItem ?: return
-        titleView.text = s.displayTitle()
-        subtitleView.text = s.displaySubtitle()
-        val bitmap = s.meta?.art
-        if (bitmap != null) {
-            art.setPadding(0, 0, 0, 0)
-            art.alpha = 1f
-            art.scaleType = ImageView.ScaleType.CENTER_CROP
-            art.setImageBitmap(bitmap)
-        } else {
-            val pad = (artCard.layoutParams.width / 4).coerceAtLeast(0)
-            art.setPadding(pad, pad, pad, pad)
-            art.alpha = 0.4f
-            art.scaleType = ImageView.ScaleType.FIT_CENTER
-            art.setImageResource(if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie)
-        }
-        lengthMs = 0
-        setLength(s.lengthMs)
-        updateModes()
-    }
-
-    private fun updatePlayButton() {
-        val playing = svc?.isPlaying == true
-        playButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
-        playButton.contentDescription = getString(if (playing) R.string.player_pause else R.string.player_play)
-    }
-
     private fun tint(button: ImageButton, on: Boolean) {
         val normal = com.google.android.material.color.MaterialColors.getColor(
             button, com.google.android.material.R.attr.colorOnSurface,
@@ -293,9 +300,7 @@ class AudioPlayerActivity : AppCompatActivity() {
         button.alpha = if (on) 1f else 0.6f
     }
 
-    private fun updateModes() {
-        val s = svc ?: return
-        abBar.refresh()
+    private fun renderModes(s: PlaybackService.NowPlaying) {
         tint(shuffleButton, s.shuffle)
         repeatButton.setImageResource(if (s.repeat == PlaybackService.Repeat.ONE) R.drawable.ic_repeat_one else R.drawable.ic_repeat)
         tint(repeatButton, s.repeat != PlaybackService.Repeat.OFF)
@@ -312,10 +317,12 @@ class AudioPlayerActivity : AppCompatActivity() {
                 }
             ),
         )
-        ViewCompat.setStateDescription(timerButton, PlayerDialogs.sleepLabel(s) ?: getString(R.string.player_state_off))
+        ViewCompat.setStateDescription(
+            timerButton, svc?.let { PlayerDialogs.sleepLabel(it) } ?: getString(R.string.player_state_off),
+        )
         // 次が無いときは押せないようにする（薄くするだけでなく、読み上げでも「無効」と伝わるように）
-        nextButton.isEnabled = s.hasNext()
-        nextButton.alpha = if (s.hasNext()) 1f else 0.4f
+        nextButton.isEnabled = s.hasNext
+        nextButton.alpha = if (s.hasNext) 1f else 0.4f
         speedButton.text = formatRate(s.rate)
         speedButton.contentDescription = getString(R.string.player_speed_desc, formatRate(s.rate).removeSuffix("x"))
     }
