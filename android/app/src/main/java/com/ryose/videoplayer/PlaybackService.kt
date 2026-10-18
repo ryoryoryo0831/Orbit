@@ -45,6 +45,8 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.RendererDiscoverer
 import org.videolan.libvlc.RendererItem
 import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.libvlc.interfaces.IVLCVout
+import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
 import java.io.FileNotFoundException
 
@@ -104,8 +106,11 @@ class PlaybackService : Service() {
 
     lateinit var libVLC: LibVLC
         private set
-    lateinit var player: MediaPlayer
-        private set
+    /**
+     * 再生エンジン。画面（再生画面・音楽画面・小窓・ミニプレイヤー）からは直接触らせず、下の「画面から使う再生の状態と操作」を通す。
+     * 次の曲・動画を開くときなどに取り替える（retirePlayer）ので、画面が古いものを持ったまま触ると、止めている途中の VLC を待って固まるため
+     */
+    private lateinit var player: MediaPlayer
     private lateinit var session: MediaSessionCompat
     private lateinit var resume: ResumeStore
     private lateinit var history: HistoryStore
@@ -208,6 +213,98 @@ class PlaybackService : Service() {
 
     /** 開き直すときの位置（準備中なら、これから始める位置） */
     private fun reloadPosition(): Long = if (preparing) preparingStart else player.time.coerceAtLeast(0)
+
+    // ---------- 画面から使う再生の状態と操作 ----------
+    // 画面は状態をここから読み、操作もここに頼む（MediaPlayer を直接触らない）。いつも今の MediaPlayer に対して行う
+
+    /** 今の再生位置（準備中なら、これから始める位置） */
+    val position: Long get() = reloadPosition()
+
+    val videoTracksCount: Int get() = runCatching { player.videoTracksCount }.getOrDefault(0)
+
+    /** 今の映像の大きさ・比・回転（まだ分からなければ null） */
+    fun currentVideoTrack(): IMedia.VideoTrack? = runCatching { player.currentVideoTrack }.getOrNull()
+
+    fun audioTracks(): Array<MediaPlayer.TrackDescription> = runCatching { player.audioTracks }.getOrNull() ?: emptyArray()
+    val audioTrack: Int get() = runCatching { player.audioTrack }.getOrDefault(-1)
+    fun spuTracks(): Array<MediaPlayer.TrackDescription> = runCatching { player.spuTracks }.getOrNull() ?: emptyArray()
+    val spuTrack: Int get() = runCatching { player.spuTrack }.getOrDefault(-1)
+    fun videoTracks(): Array<MediaPlayer.TrackDescription> = runCatching { player.videoTracks }.getOrNull() ?: emptyArray()
+    val videoTrack: Int get() = runCatching { player.videoTrack }.getOrDefault(-1)
+
+    fun selectVideoTrack(id: Int) {
+        runCatching { player.setVideoTrack(id) }
+    }
+
+    /** 字幕・音声のずれ（マイクロ秒） */
+    val spuDelay: Long get() = runCatching { player.spuDelay }.getOrDefault(0L)
+    val audioDelay: Long get() = runCatching { player.audioDelay }.getOrDefault(0L)
+
+    fun setSpuDelay(us: Long) {
+        runCatching { player.setSpuDelay(us) }
+    }
+
+    fun setAudioDelay(us: Long) {
+        runCatching { player.setAudioDelay(us) }
+    }
+
+    val currentChapter: Int get() = runCatching { player.chapter }.getOrDefault(-1)
+
+    fun setChapter(index: Int) {
+        runCatching { player.setChapter(index) }
+    }
+
+    /** 再生画面の画面サイズ（全体・画面に合わせる・16:9 など） */
+    fun setVideoScale(scale: MediaPlayer.ScaleType) {
+        runCatching { player.setVideoScale(scale) }
+    }
+
+    /** 再生画面の映像の出し先（VLCVideoLayout）をつなぐ。出し先の準備は callback で分かる */
+    fun attachVideo(layout: VLCVideoLayout, callback: IVLCVout.Callback) {
+        player.vlcVout.addCallback(callback)
+        player.attachViews(layout, null, true, false)
+    }
+
+    /** 映像の出し先の準備を見張るのをやめる */
+    fun removeVideoCallback(callback: IVLCVout.Callback) {
+        runCatching { player.vlcVout.removeCallback(callback) }
+    }
+
+    /** 再生画面の映像の出し先を外す */
+    fun detachVideo() {
+        runCatching { player.detachViews() }
+    }
+
+    /**
+     * 自由な小窓の映像の出し先（SurfaceView）を VLC に直接つなぐ。VLCVideoLayout（attachViews）は、
+     * 画面（Activity）の中でないと描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさは setPopupVideoSize で伝える
+     */
+    fun attachPopupVideo(
+        video: android.view.SurfaceView, subtitles: android.view.SurfaceView, callback: IVLCVout.Callback,
+        layoutListener: IVLCVout.OnNewVideoLayoutListener, width: Int, height: Int,
+    ) {
+        val vout = player.vlcVout
+        // 万一ほかの出し先がつながったままなら外す（つながったまま付けると VLC がエラーにする）
+        if (vout.areViewsAttached()) player.detachViews()
+        if (vout.areViewsAttached()) vout.detachViews()
+        vout.setVideoView(video)
+        vout.setSubtitlesView(subtitles)
+        vout.addCallback(callback)
+        vout.attachViews(layoutListener)
+        setPopupVideoSize(width, height)
+        // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
+        player.setAspectRatio(null)
+        player.setScale(0f)
+    }
+
+    fun setPopupVideoSize(width: Int, height: Int) {
+        if (width > 0 && height > 0) runCatching { player.vlcVout.setWindowSize(width, height) }
+    }
+
+    fun detachPopupVideo(callback: IVLCVout.Callback) {
+        runCatching { player.vlcVout.removeCallback(callback) }
+        runCatching { player.vlcVout.detachViews() }
+    }
 
     // ---------- サービスのライフサイクル ----------
 

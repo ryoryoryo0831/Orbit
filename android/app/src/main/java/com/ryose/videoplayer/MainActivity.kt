@@ -253,7 +253,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateMiniProgress() {
         val s = connection.service ?: return
         val len = s.lengthMs
-        miniProgress.progress = if (len > 0) (s.player.time.coerceAtLeast(0) * 1000 / len).toInt().coerceIn(0, 1000) else 0
+        miniProgress.progress = if (len > 0) (s.position * 1000 / len).toInt().coerceIn(0, 1000) else 0
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

@@ -68,11 +68,10 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private lateinit var statusView: android.widget.TextView
     private val checkVideoTask = Runnable {
         if (root == null || voutShown || service.currentItem?.isAudio != false) return@Runnable
-        val p = service.player
         statusView.text = "映像を出せませんでした\n出し先:" + (if (surfacesReady) "OK" else "未") +
             " 大きさ:${params.width}x${params.height}" +
-            " トラック:${runCatching { p.videoTrack }.getOrDefault(-99)}/${runCatching { p.videoTracksCount }.getOrDefault(-1)}" +
-            " 再生中:${p.isPlaying}"
+            " トラック:${service.videoTrack}/${service.videoTracksCount}" +
+            " 再生中:${service.isPlaying}"
         statusView.visibility = View.VISIBLE
     }
 
@@ -181,23 +180,12 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         return true
     }
 
-    /**
-     * 映像の出し先を VLC に直接つなぐ。VLCVideoLayout（player.attachViews）は、画面（Activity）の中でないと
-     * 描く大きさを VLC に伝えないため、小窓では映像が出なかった。大きさはここで自分で伝える
-     */
+    /** 映像の出し先（SurfaceView）を VLC に直接つなぐ（PlaybackService.attachPopupVideo） */
     private fun attachVout(view: View, width: Int, height: Int) {
-        val vout = service.player.vlcVout
-        // 万一ほかの出し先がつながったままなら外す（つながったまま付けると VLC がエラーにする）
-        if (vout.areViewsAttached()) service.player.detachViews()
-        if (vout.areViewsAttached()) vout.detachViews()
-        vout.setVideoView(view.findViewById<android.view.SurfaceView>(R.id.popupSurface))
-        vout.setSubtitlesView(view.findViewById<android.view.SurfaceView>(R.id.popupSubtitles))
-        vout.addCallback(surfacesCallback)
-        vout.attachViews(voutLayoutListener)
-        setVoutSize(width, height)
-        // 小窓では、映像の全体が見えるようにする（全画面に戻ったら、その画面の設定に戻る）
-        service.player.setAspectRatio(null)
-        service.player.setScale(0f)
+        service.attachPopupVideo(
+            view.findViewById(R.id.popupSurface), view.findViewById(R.id.popupSubtitles),
+            surfacesCallback, voutLayoutListener, width, height,
+        )
     }
 
     /** 再生サービスが MediaPlayer を取り替えた（次の動画など）：映像の出し先を新しいものにつなぎ直す */
@@ -217,8 +205,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         // 映像の出し先が無くなるので映像を止めておく（全画面に戻ったら、そちらで戻す）
         runCatching { service.setVideoEnabled(false) }
         videoFrame.removeOnLayoutChangeListener(videoSizeListener)
-        runCatching { service.player.vlcVout.removeCallback(surfacesCallback) }
-        runCatching { service.player.vlcVout.detachViews() }
+        service.detachPopupVideo(surfacesCallback)
         service.videoUiAttached = false
         runCatching { wm.removeView(view) }
     }
@@ -304,7 +291,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         }
         progress.visibility = View.VISIBLE
         progress.max = 1000
-        progress.progress = (service.player.time.coerceAtLeast(0) * 1000 / len).toInt()
+        progress.progress = (service.position * 1000 / len).toInt()
     }
 
     /** 小窓の幅に合わせて、出すボタンを増やしたり減らしたりする */
@@ -479,7 +466,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     }
 
     private fun setVoutSize(width: Int, height: Int) {
-        if (width > 0 && height > 0) runCatching { service.player.vlcVout.setWindowSize(width, height) }
+        service.setPopupVideoSize(width, height)
     }
 
     private fun minSize() = (PopupGeometry.MIN_SIZE_DP * density).roundToInt()
@@ -487,7 +474,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private fun keepVisible() = (PopupGeometry.KEEP_VISIBLE_DP * density).roundToInt()
 
     private fun currentAspect(): Float {
-        val vt = runCatching { service.player.currentVideoTrack }.getOrNull() ?: return aspect
+        val vt = service.currentVideoTrack() ?: return aspect
         var w = vt.width
         var h = vt.height
         if (vt.sarNum > 0 && vt.sarDen > 0) w = w * vt.sarNum / vt.sarDen

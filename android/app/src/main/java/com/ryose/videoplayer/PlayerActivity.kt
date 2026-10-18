@@ -148,7 +148,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun stopWatchingSurfaces(s: PlaybackService) {
         handler.removeCallbacks(ensureVideoTask)
-        runCatching { s.player.vlcVout.removeCallback(surfacesCallback) }
+        s.removeVideoCallback(surfacesCallback)
     }
 
     private val ensureVideoTask = Runnable {
@@ -231,8 +231,7 @@ class PlayerActivity : AppCompatActivity() {
             val s = svc ?: return
             if (!viewsAttached) return
             voutCount = 0
-            s.player.vlcVout.addCallback(surfacesCallback)
-            s.player.attachViews(videoLayout, null, true, false)
+            s.attachVideo(videoLayout, surfacesCallback)
             // 出し先は動画を渡す前から用意できているので、映像の出し直し（ensureVideoTask）は要らない。
             // 走らせると、開いている途中の動画を 0 秒へ動かして、続きから再生の位置が失われることがある
             handler.removeCallbacks(ensureVideoTask)
@@ -452,8 +451,7 @@ class PlayerActivity : AppCompatActivity() {
         val engineRebuilt = load == null && s.currentItem?.isAudio == false && s.recreateEngineKeepingItem()
         if (!viewsAttached) {
             voutCount = 0
-            s.player.vlcVout.addCallback(surfacesCallback)
-            s.player.attachViews(videoLayout, null, true, false)
+            s.attachVideo(videoLayout, surfacesCallback)
             viewsAttached = true
         }
         s.videoUiAttached = true
@@ -532,7 +530,7 @@ class PlayerActivity : AppCompatActivity() {
             if (viewsAttached) {
                 s.videoUiAttached = false
                 stopWatchingSurfaces(s)
-                s.player.detachViews()
+                s.detachVideo()
                 viewsAttached = false
             }
             // 小窓のときは、閉じられたことを受け取れるようにつないだままにしておく
@@ -651,12 +649,12 @@ class PlayerActivity : AppCompatActivity() {
     private fun refreshAll() {
         val s = svc ?: return
         updateItem()
-        val t = s.player.time.coerceAtLeast(0)
+        val t = s.position
         seekBar.progress = t.toInt()
         timeCurrent.text = formatTime(t)
         setPlayIcon(s.isPlaying)
         videoLayout.keepScreenOn = s.isPlaying
-        if (s.player.videoTracksCount > 0) onVideoReady()
+        if (s.videoTracksCount > 0) onVideoReady()
         // 再生できなかったまま戻ってきたときは、理由をもう一度出す
         val error = s.lastError
         if (error != null) showError(error) else hideError()
@@ -732,7 +730,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun onVideoReady() {
         val s = svc ?: return
-        val vt = runCatching { s.player.currentVideoTrack }.getOrNull() ?: return
+        val vt = s.currentVideoTrack() ?: return
         var w = vt.width
         var h = vt.height
         if (vt.sarNum > 0 && vt.sarDen > 0) w = w * vt.sarNum / vt.sarDen
@@ -742,7 +740,7 @@ class PlayerActivity : AppCompatActivity() {
         videoW = w
         videoH = h
         applyOrientation()
-        s.player.setVideoScale(scales[scaleIndex].first)
+        s.setVideoScale(scales[scaleIndex].first)
         updatePipParams()
     }
 
@@ -782,14 +780,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showSubtitleMenu() {
-        val player = svc?.player ?: return
-        val tracks = player.spuTracks ?: emptyArray()
+        val s = svc ?: return
+        val tracks = s.spuTracks()
         ActionSheet.show(
             this, "字幕",
             // 選ぶときは、そのときの MediaPlayer に（開いている間に次の動画へ進むと、取り替えられているため）
-            trackItems(tracks, player.spuTrack, R.drawable.ic_subtitles) { svc?.selectSpuTrack(it) } + listOf(
+            trackItems(tracks, s.spuTrack, R.drawable.ic_subtitles) { svc?.selectSpuTrack(it) } + listOf(
                 SheetItem(R.drawable.ic_add, "字幕ファイルを追加") { pickSubtitle.launch(arrayOf("*/*")) },
-                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.spuDelay)}") { showDelayDialog(subtitle = true) },
+                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(s.spuDelay)}") { showDelayDialog(subtitle = true) },
             ) + listOfNotNull(
                 // 隣にある字幕ファイルが文字化けしたとき
                 if (svc?.currentItem?.path != null) SheetItem(
@@ -813,12 +811,12 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showAudioMenu() {
-        val player = svc?.player ?: return
-        val tracks = player.audioTracks ?: emptyArray()
+        val s = svc ?: return
+        val tracks = s.audioTracks()
         ActionSheet.show(
             this, "音声トラック",
-            trackItems(tracks, player.audioTrack, R.drawable.ic_audiotrack) { svc?.selectAudioTrack(it) } +
-                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(player.audioDelay)}") { showDelayDialog(subtitle = false) },
+            trackItems(tracks, s.audioTrack, R.drawable.ic_audiotrack) { svc?.selectAudioTrack(it) } +
+                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(s.audioDelay)}") { showDelayDialog(subtitle = false) },
         )
     }
 
@@ -830,12 +828,12 @@ class PlayerActivity : AppCompatActivity() {
         val dp = resources.displayMetrics.density
         // そのときの MediaPlayer を使う（開いている間に次の動画へ進むと、取り替えられているため）
         fun current(): Long {
-            val player = svc?.player ?: return 0L
-            return if (subtitle) player.spuDelay else player.audioDelay
+            val s = svc ?: return 0L
+            return if (subtitle) s.spuDelay else s.audioDelay
         }
         fun apply(us: Long) {
-            val player = svc?.player ?: return
-            if (subtitle) player.setSpuDelay(us) else player.setAudioDelay(us)
+            val s = svc ?: return
+            if (subtitle) s.setSpuDelay(us) else s.setAudioDelay(us)
         }
 
         val value = TextView(this).apply {
@@ -894,7 +892,7 @@ class PlayerActivity : AppCompatActivity() {
         val s = svc ?: return
         setZoom(1f)
         scaleIndex = (scaleIndex + 1) % scales.size
-        s.player.setVideoScale(scales[scaleIndex].first)
+        s.setVideoScale(scales[scaleIndex].first)
         showInfo(scales[scaleIndex].second)
     }
 
@@ -974,7 +972,7 @@ class PlayerActivity : AppCompatActivity() {
             if (titleCount > 1) add(SheetItem(R.drawable.ic_movie, "タイトル", "$titleCount 個") { showTitles() })
             // DVD のメニューを開いて、十字キーで操作する
             if (s.discMenuTitle() >= 0) add(SheetItem(R.drawable.ic_album, "DVD メニュー") { openDvdMenu() })
-            if (s.player.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
+            if (s.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
         }
         val items = buildList {
             add(SheetItem(if (fav) R.drawable.ic_star else R.drawable.ic_star_border, if (fav) "お気に入りから外す" else "お気に入りに追加", active = fav) {
@@ -1036,7 +1034,7 @@ class PlayerActivity : AppCompatActivity() {
         val input = android.widget.EditText(this).apply {
             hint = "例：1:23:45 / 12:30"
             inputType = android.text.InputType.TYPE_CLASS_DATETIME or android.text.InputType.TYPE_DATETIME_VARIATION_TIME
-            setText(formatTime(s.player.time))
+            setText(formatTime(s.position))
             selectAll()
         }
         val box = android.widget.FrameLayout(this).apply {
@@ -1070,9 +1068,10 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showVideoTrackMenu() {
-        val player = svc?.player ?: return
-        val tracks = player.videoTracks ?: return
-        ActionSheet.show(this, "映像トラック", trackItems(tracks, player.videoTrack, R.drawable.ic_movie) { svc?.player?.setVideoTrack(it) })
+        val s = svc ?: return
+        val tracks = s.videoTracks()
+        if (tracks.isEmpty()) return
+        ActionSheet.show(this, "映像トラック", trackItems(tracks, s.videoTrack, R.drawable.ic_movie) { svc?.selectVideoTrack(it) })
     }
 
     /** チャプターの一覧（タップでそこへ移動） */
@@ -1080,14 +1079,14 @@ class PlayerActivity : AppCompatActivity() {
         val s = svc ?: return
         val chapters = s.chapters()
         if (chapters.isEmpty()) return
-        val current = s.player.chapter
+        val current = s.currentChapter
         ActionSheet.show(this, "チャプター（${chapters.size}）", chapters.mapIndexed { i, c ->
             SheetItem(
                 if (i == current) R.drawable.ic_play else R.drawable.ic_chapters,
                 c.name?.takeIf { it.isNotBlank() } ?: "チャプター ${i + 1}",
                 formatTime(c.timeOffset),
                 active = i == current,
-            ) { s.player.setChapter(i) }
+            ) { svc?.setChapter(i) }
         }, scrollTo = if (current > 3) current - 2 else -1)
     }
 
@@ -1175,7 +1174,7 @@ class PlayerActivity : AppCompatActivity() {
                     return@request
                 }
                 val name = (svc?.currentItem?.title?.substringBeforeLast('.') ?: "screenshot") +
-                    "_" + formatTime(svc?.player?.time ?: 0).replace(':', '-')
+                    "_" + formatTime(svc?.position ?: 0).replace(':', '-')
                 lifecycleScope.launch {
                     val saved = withContext(Dispatchers.IO) { Screenshots.save(this@PlayerActivity, bitmap, name) }
                     showInfo(if (saved != null) "保存しました\n$saved" else "保存できませんでした")
@@ -1709,14 +1708,13 @@ class PlayerActivity : AppCompatActivity() {
         s.setVideoEnabled(false)
         s.videoUiAttached = false
         stopWatchingSurfaces(s)
-        s.player.detachViews()
+        s.detachVideo()
         viewsAttached = false
         if (!s.showPopup()) {
             handedToPopup = false
             s.addListener(listener)
             voutCount = 0
-            s.player.vlcVout.addCallback(surfacesCallback)
-            s.player.attachViews(videoLayout, null, true, false)
+            s.attachVideo(videoLayout, surfacesCallback)
             viewsAttached = true
             s.videoUiAttached = true
             s.restoreVideo()
@@ -1870,7 +1868,7 @@ class PlayerActivity : AppCompatActivity() {
                         Gesture.VOLUME -> currentVolumePercent().toFloat()
                         else -> 0f
                     }
-                    seekStartPos = s.player.time.coerceAtLeast(0)
+                    seekStartPos = s.position
                     seekTarget = seekStartPos
                 }
                 when (gesture) {

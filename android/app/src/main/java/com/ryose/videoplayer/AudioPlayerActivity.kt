@@ -226,7 +226,7 @@ class AudioPlayerActivity : AppCompatActivity() {
         lengthMs = 0
         setLength(s.lengthMs)
         if (!userSeeking) {
-            val t = s.player.time.coerceAtLeast(0)
+            val t = s.position
             seekBar.progress = t.toInt()
             timeCurrent.text = formatTime(t)
         }
@@ -335,14 +335,14 @@ class AudioPlayerActivity : AppCompatActivity() {
                 if (s.abA < 0) Toast.makeText(this@AudioPlayerActivity, "くり返したい区間の始めで「A」、終わりで「B」を押してください", Toast.LENGTH_LONG).show()
             })
             if (chapters.isNotEmpty()) add(SheetItem(R.drawable.ic_chapters, "チャプター", "${chapters.size} 個") {
-                val current = s.player.chapter
+                val current = s.currentChapter
                 ActionSheet.show(this@AudioPlayerActivity, "チャプター", chapters.mapIndexed { i, c ->
                     SheetItem(
                         if (i == current) R.drawable.ic_play else R.drawable.ic_chapters,
                         c.name?.takeIf { it.isNotBlank() } ?: "チャプター ${i + 1}",
                         formatTime(c.timeOffset),
                         active = i == current,
-                    ) { s.player.setChapter(i) }
+                    ) { s.setChapter(i) }
                 }, scrollTo = if (current > 3) current - 2 else -1)
             })
             add(SheetItem(
