@@ -194,6 +194,17 @@
             app:title="バージョン" />
         <Preference
             app:iconSpaceReserved="false"
+            app:key="update_now"
+            app:summary="GitHub に新しい版があるか確かめて、あれば入れます"
+            app:title="アップデートを確認" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="update_check"
+            app:summary="アプリを開いたときに（12 時間に 1 回まで）確かめて、新しい版があれば知らせます"
+            app:title="新しい版を知らせる" />
+        <Preference
+            app:iconSpaceReserved="false"
             app:selectable="false"
             app:summary="再生エンジンに libVLC（VideoLAN）を使用しています"
             app:title="再生エンジン" />

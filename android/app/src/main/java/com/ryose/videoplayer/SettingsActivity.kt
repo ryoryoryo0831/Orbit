@@ -64,6 +64,10 @@ class SettingsActivity : AppCompatActivity() {
                 AppSettings.applyTheme(ctx, v as String)
                 true
             }
+            findPreference<androidx.preference.Preference>("update_now")?.setOnPreferenceClickListener {
+                (activity as? AppCompatActivity)?.let { AppUpdater.checkNow(it) }
+                true
+            }
             findPreference<androidx.preference.Preference>("licenses")?.setOnPreferenceClickListener {
                 showLicenses()
                 true

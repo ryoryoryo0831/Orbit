@@ -3,4 +3,6 @@
 <paths>
     <external-path name="external" path="." />
     <root-path name="root" path="." />
+    <!-- 新しい版の APK（AppUpdater）をインストールの画面に渡す -->
+    <cache-path name="update" path="update/" />
 </paths>

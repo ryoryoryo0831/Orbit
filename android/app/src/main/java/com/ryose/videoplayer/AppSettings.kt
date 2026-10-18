@@ -137,6 +137,11 @@ object AppSettings {
     fun notificationPermissionAsked(c: Context) = bool(c, "notification_permission_asked", false)
     fun setNotificationPermissionAsked(c: Context) = prefs(c).edit { putBoolean("notification_permission_asked", true) }
 
+    // 新しい版の知らせ（AppUpdater）
+    fun updateCheckOnStart(c: Context) = bool(c, "update_check", true)
+    fun updateCheckedAt(c: Context) = prefs(c).getLong("update_checked_at", 0L)
+    fun setUpdateCheckedAt(c: Context, time: Long) = prefs(c).edit { putLong("update_checked_at", time) }
+
     // 一覧
     fun videosGrid(c: Context) = bool(c, "videos_grid", false)
     fun setVideosGrid(c: Context, v: Boolean) = prefs(c).edit { putBoolean("videos_grid", v) }

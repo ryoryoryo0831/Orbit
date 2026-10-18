@@ -153,6 +153,8 @@ class MainActivity : AppCompatActivity() {
                 nowPlaying.state.collect(::renderMini)
             }
         }
+        // 新しい版が GitHub にあれば知らせる（12 時間に 1 回まで。画面を作り直したときは確かめない）
+        if (savedInstanceState == null) AppUpdater.checkOnStart(this)
     }
 
     override fun onStart() {
