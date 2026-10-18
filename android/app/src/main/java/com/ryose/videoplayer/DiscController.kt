@@ -72,6 +72,9 @@ class DiscController(private val handler: Handler, private val host: Host) {
         return true
     }
 
+    /** 記録（PlaybackLog）に残すための、前に見たタイトル */
+    private var lastTitle = -1
+
     /** DVD のメニューの操作（MediaPlayer.Navigate の上・下・左・右・決定） */
     fun navigate(direction: Int) {
         // メニューを操作したら、そのあと本編などへ進んでもメニューへ戻さない
@@ -136,6 +139,7 @@ class DiscController(private val handler: Handler, private val host: Host) {
                     return@postDelayed
                 }
                 DiscRules.MenuJump.JUMP -> {
+                    PlaybackLog.add("DVD：メニューより先に流れたタイトル ${host.vlcTitle()} を飛ばしてメニューへ")
                     host.setVlcTitle(DiscRules.menuIndex(titles))
                     host.onTitleChanged()
                     n++
@@ -156,7 +160,10 @@ class DiscController(private val handler: Handler, private val host: Host) {
             if (gen != host.generation || host.startedWithoutVideo) return@postDelayed
             val empty = DiscRules.emptyMenuSeconds(isInMenu(), host.videoTracksCount, emptySeconds) ?: return@postDelayed
             when {
-                empty >= DiscRules.EMPTY_MENU_SECONDS -> chooseMainTitle(gen, 0)
+                empty >= DiscRules.EMPTY_MENU_SECONDS -> {
+                    PlaybackLog.add("DVD：メニューに映像が無いので本編へ")
+                    chooseMainTitle(gen, 0)
+                }
                 tries < 60 -> watchEmptyMenu(gen, tries + 1, empty)
             }
         }, 1000)
@@ -181,6 +188,7 @@ class DiscController(private val handler: Handler, private val host: Host) {
         }
         val main = resumeTitle?.takeIf { it in titles.indices && !titles[it].isMenu } ?: DiscRules.mainTitle(titles)
         resumeTitle = null
+        PlaybackLog.add("DVD：タイトル $main を選ぶ（${titles.size} 個のうち）")
         if (main != null && main != host.vlcTitle()) {
             host.setVlcTitle(main)
             host.onTitleChanged()
@@ -201,6 +209,11 @@ class DiscController(private val handler: Handler, private val host: Host) {
         override fun run() {
             if (!host.isDiscItem || !host.hasMedia()) return
             val inMenu = isInMenu()
+            val title = host.vlcTitle()
+            if (title != lastTitle) {
+                PlaybackLog.add("DVD のタイトル：$lastTitle → $title${if (inMenu) "（メニュー）" else ""}")
+                lastTitle = title
+            }
             // メニューから出たとき、と本編などを再生している間は、音声・字幕を見直す
             // （区切りが変わるたびにディスクが音声を 1 本目に戻すことがある。クリミナル・マインドの ISO の命令で確認）
             if (!inMenu) host.onPlayingContent()

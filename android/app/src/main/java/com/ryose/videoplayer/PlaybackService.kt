@@ -692,6 +692,7 @@ class PlaybackService : Service() {
         if (!s.restorable(videoOnly = videoOnly, audioOnly = audioOnly, evenIfStopped = evenIfStopped)) return false
         // DVD（ISO）は、メニューからではなく見ていたタイトル（話）の続きから
         resumeDiscOnce = true
+        PlaybackLog.add("前回の続きを読み込み直す：${s.current?.title}")
         load(s.items, s.index, s.shuffle, paused = !play, advance = s.advance, presetOrder = s.order)
         return currentItem != null
     }
@@ -785,6 +786,7 @@ class PlaybackService : Service() {
         }
         val hw = hwDecodingFor(item)
         media.setHWDecoderEnabled(hw, false)
+        PlaybackLog.add("開く：${item.title}（${if (item.isNetwork) "ネットワーク" else "端末"}、${if (hw) "ハードウェア" else "ソフトウェア"}デコード、${PlaybackLog.time(startMs)} から${if (paused) "、一時停止" else ""}）")
         // MPEG-2・AVCHD などのインターレースの映像は、ハードウェアデコードの「画面に直接描く」モードだと
         // VLC の横縞を消す処理（インターレース解除）が効かず、動きのある場面で縞が出る。
         // これらの形式だけは、デコードはハードウェアのまま、絵を VLC に渡して横縞を消してから描く（VLC for Android の「デコードのみ」と同じ）
@@ -812,6 +814,13 @@ class PlaybackService : Service() {
             // メニューから始めないときは DVD もメニューを出さない（本編は DiscController が選ぶ。メニューは再生画面の︙から開ける）
             if (!startInMenu) media.addOption(":no-dvdnav-menu")
             disc.prepare(gen, startInMenu, startMs, resumeTitle)
+            PlaybackLog.add(
+                "DVD の始め方：" + when {
+                    resumeTitle != null -> "前回の続き（タイトル $resumeTitle の ${PlaybackLog.time(startMs)}）"
+                    startInMenu -> "メニューから"
+                    else -> "本編から（${PlaybackLog.time(startMs)}）"
+                },
+            )
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
         }
@@ -954,6 +963,7 @@ class PlaybackService : Service() {
 
     /** 再生を終了して通知も消す（[byUser] は、わざと終わらせたか。しばらく放っておいて終わったときは false） */
     fun stopPlayback(byUser: Boolean = true) {
+        if (currentItem != null) PlaybackLog.add(if (byUser) "再生を終える" else "一時停止のまま時間がたったので終える")
         savePosition()
         if (byUser && currentItem != null) LastSession.markStopped(this)
         // 準備中の曲・動画があれば、その結果は使わない
@@ -1305,10 +1315,16 @@ class PlaybackService : Service() {
     })
 
     /** 再生画面のメニューから音声を選ぶ */
-    fun selectAudioTrack(id: Int) = tracks.selectAudio(currentItem?.key, id)
+    fun selectAudioTrack(id: Int) {
+        PlaybackLog.add("手で音声を選んだ：${audioTracks().find { it.id == id }?.name ?: id}")
+        tracks.selectAudio(currentItem?.key, id)
+    }
 
     /** 再生画面のメニューから字幕を選ぶ（-1 でオフ） */
-    fun selectSpuTrack(id: Int) = tracks.selectSpu(currentItem?.key, id)
+    fun selectSpuTrack(id: Int) {
+        PlaybackLog.add("手で字幕を選んだ：${if (id == -1) "オフ" else spuTracks().find { it.id == id }?.name ?: id}")
+        tracks.selectSpu(currentItem?.key, id)
+    }
 
     // ---------- スリープタイマー（SleepTimer.kt） ----------
 
@@ -1345,6 +1361,7 @@ class PlaybackService : Service() {
     }
 
     private fun onPlayerEvent(e: MediaPlayer.Event) {
+        logEvent(e)
         // 準備中に届いた、止めた前の曲・動画の「終わった」「エラー」は無視する（次の曲まで飛ばさないように）
         if (preparing && (e.type == MediaPlayer.Event.EndReached || e.type == MediaPlayer.Event.EncounteredError)) return
         when (e.type) {
@@ -1412,6 +1429,7 @@ class PlaybackService : Service() {
      * 次が無い（または全部だめな）ときは、画面（動画の画面）に理由を表示してもらい、表示できる画面が無ければ終了する
      */
     private fun onPlaybackError(reason: String) {
+        PlaybackLog.add("再生できない：${currentItem?.title}（$reason）")
         if (errorHandled) return
         errorHandled = true
         errorStreak++
@@ -1474,6 +1492,28 @@ class PlaybackService : Service() {
             resume.saveTitle(item.key, currentTitle())
         }
         resume.save(item.key, t, len)
+    }
+
+    /** 再生の記録（PlaybackLog）に残す出来事。TimeChanged など何度も来るものは残さない */
+    private fun logEvent(e: MediaPlayer.Event) {
+        fun kind(t: Int) = when (t) {
+            IMedia.Track.Type.Audio -> "音声"
+            IMedia.Track.Type.Video -> "映像"
+            IMedia.Track.Type.Text -> "字幕"
+            else -> "その他"
+        }
+        val text = when (e.type) {
+            MediaPlayer.Event.Playing -> "再生"
+            MediaPlayer.Event.Paused -> "一時停止（${PlaybackLog.time(runCatching { player.time }.getOrDefault(0))}）"
+            MediaPlayer.Event.EndReached -> "最後まで再生した"
+            MediaPlayer.Event.EncounteredError -> "VLC のエラー"
+            MediaPlayer.Event.ESAdded -> "トラックが増えた：${kind(e.esChangedType)} ${e.esChangedID}"
+            MediaPlayer.Event.ESDeleted -> "トラックが消えた：${kind(e.esChangedType)} ${e.esChangedID}"
+            MediaPlayer.Event.ESSelected -> "トラックが選ばれた：${kind(e.esChangedType)} ${e.esChangedID}"
+            else -> return
+        }
+        // 準備中（前の曲・動画が残っている）の知らせは、そうと分かるように
+        PlaybackLog.add(if (preparing) "（準備中）$text" else text)
     }
 
     // ---------- 字幕 ----------

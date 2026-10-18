@@ -39,6 +39,8 @@ class App : Application(), ImageLoaderFactory {
         super.onCreate()
         // 落ちたときに記録を残す（設定の「落ちたときの記録」で見られる）。ほかの処理で落ちても残るように最初に
         CrashLog.install(this)
+        // 再生の記録（設定の「再生の記録」で見られる）
+        PlaybackLog.init(this)
         AppSettings.applyTheme(this)
         // 古いデータの片付け（起動を遅くしないように裏で）
         CoroutineScope(Dispatchers.IO).launch {

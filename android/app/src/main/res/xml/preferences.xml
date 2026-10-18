@@ -182,6 +182,25 @@
             app:iconSpaceReserved="false"
             app:key="crash_log"
             app:title="落ちたときの記録" />
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="playback_log"
+            app:title="再生の記録" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="データ">
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="backup_export"
+            app:summary="設定・お気に入り・プレイリスト・NAS などの登録・履歴・続きの位置をファイルに書き出します（パスワードは含めません）"
+            app:title="書き出す（バックアップ）" />
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="backup_import"
+            app:summary="書き出したファイルを読み込んで、今のデータと置き換えます"
+            app:title="読み込む（元に戻す）" />
     </PreferenceCategory>
 
     <PreferenceCategory

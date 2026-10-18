@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -52,6 +53,12 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
+        // データの書き出し・読み込み（Backup）。ファイルを選ぶ画面が無い端末（テレビなど）は「ダウンロード/Orbit」を使う
+        private val exportLauncher =
+            registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { exportTo(it) } }
+        private val importLauncher =
+            registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { confirmImport(it) } }
+
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             // ハードウェアデコードの初期値は端末で変わる（テレビはオフ）ので、画面に出す前に書いておく
             AppSettings.ensureHwDecodingDefault(requireContext())
@@ -62,6 +69,18 @@ class SettingsActivity : AppCompatActivity() {
             // テーマはすぐに切り替える
             findPreference<androidx.preference.ListPreference>("theme")?.setOnPreferenceChangeListener { _, v ->
                 AppSettings.applyTheme(ctx, v as String)
+                true
+            }
+            findPreference<androidx.preference.Preference>("backup_export")?.setOnPreferenceClickListener {
+                startExport()
+                true
+            }
+            findPreference<androidx.preference.Preference>("backup_import")?.setOnPreferenceClickListener {
+                startImport()
+                true
+            }
+            findPreference<androidx.preference.Preference>("playback_log")?.setOnPreferenceClickListener {
+                PlaybackLogScreen.show(requireContext()) { refreshCrashSummary() }
                 true
             }
             findPreference<androidx.preference.Preference>("update_now")?.setOnPreferenceClickListener {
@@ -92,7 +111,81 @@ class SettingsActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val records = withContext(Dispatchers.IO) { CrashLog.records(ctx) }
                 findPreference<androidx.preference.Preference>("crash_log")?.summary = CrashLogScreen.summary(records)
+                findPreference<androidx.preference.Preference>("playback_log")?.summary = PlaybackLogScreen.summary()
             }
+        }
+
+        private fun startExport() {
+            try {
+                exportLauncher.launch(Backup.fileName())
+            } catch (_: ActivityNotFoundException) {
+                // ファイルを選ぶ画面が無い（テレビなど）：「ダウンロード/Orbit」に書き出す
+                val ctx = requireContext().applicationContext
+                lifecycleScope.launch {
+                    val place = withContext(Dispatchers.IO) { runCatching { Backup.exportToDownloads(ctx, Backup.export(ctx)) }.getOrNull() }
+                    done(if (place != null) "「$place」に書き出しました。" else "書き出せませんでした。")
+                }
+            }
+        }
+
+        private fun exportTo(uri: android.net.Uri) {
+            val ctx = requireContext().applicationContext
+            lifecycleScope.launch {
+                val ok = withContext(Dispatchers.IO) { runCatching { Backup.writeText(ctx, uri, Backup.export(ctx)) }.getOrDefault(false) }
+                done(if (ok) "書き出しました。NAS などのパスワードは含めていないので、別の端末に読み込んだら入れ直してください。" else "書き出せませんでした。")
+            }
+        }
+
+        private fun startImport() {
+            try {
+                importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
+            } catch (_: ActivityNotFoundException) {
+                // ファイルを選ぶ画面が無い（テレビなど）：「ダウンロード」にある書き出したファイルから選ぶ
+                val ctx = requireContext().applicationContext
+                lifecycleScope.launch {
+                    val found = withContext(Dispatchers.IO) { runCatching { Backup.findInDownloads(ctx) }.getOrDefault(emptyList()) }
+                    if (found.isEmpty()) {
+                        done("「ダウンロード」フォルダに、書き出したファイル（Orbit-backup-…）が見つかりませんでした。")
+                        return@launch
+                    }
+                    ActionSheet.show(
+                        requireContext(), "読み込むファイル",
+                        found.map { (name, uri) -> SheetItem(R.drawable.ic_info, name) { confirmImport(uri) } },
+                    )
+                }
+            }
+        }
+
+        private fun confirmImport(uri: android.net.Uri) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("読み込みますか？")
+                .setMessage("今の設定・お気に入り・プレイリスト・登録・履歴は、ファイルの中身に置き換わります。読み込んだあと、アプリを起動し直します。")
+                .setPositiveButton("読み込む") { _, _ -> importFrom(uri) }
+                .setNegativeButton("キャンセル", null)
+                .show()
+        }
+
+        private fun importFrom(uri: android.net.Uri) {
+            val ctx = requireContext().applicationContext
+            lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    val text = Backup.readText(ctx, uri)
+                    if (text == null) Backup.Result(false, "ファイルを読めませんでした") else runCatching { Backup.import(ctx, text) }
+                        .getOrElse { Backup.Result(false, "読み込めませんでした（${it.message.orEmpty()}）") }
+                }
+                val activity = activity ?: return@launch
+                MaterialAlertDialogBuilder(activity)
+                    .setTitle(if (result.ok) "読み込みました" else "読み込めませんでした")
+                    .setMessage(result.message)
+                    .setCancelable(!result.ok)
+                    .setPositiveButton(if (result.ok) "起動し直す" else "閉じる") { _, _ -> if (result.ok) Backup.restartApp(activity) }
+                    .show()
+            }
+        }
+
+        private fun done(message: String) {
+            val activity = activity ?: return
+            MaterialAlertDialogBuilder(activity).setMessage(message).setPositiveButton("閉じる", null).show()
         }
 
         /** 使っているオープンソースのソフトウェアと、そのライセンスの一覧 */

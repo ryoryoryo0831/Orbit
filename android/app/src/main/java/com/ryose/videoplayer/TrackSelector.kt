@@ -91,6 +91,16 @@ class TrackSelector(private val handler: Handler, private val store: TrackChoice
             chosenSpu = store.spu(key),
             keepSubtitles = host.hasAddedSubtitles(key),
         )
+        if (choice.audio != null || choice.spu != null) {
+            fun name(list: Array<MediaPlayer.TrackDescription>, id: Int?) = if (id == -1) "オフ" else list.find { it.id == id }?.name ?: "$id"
+            val spu = host.spuTracks()
+            PlaybackLog.add(
+                "音声・字幕を選び直す（" + (if (store.audio(key) != null || store.spu(key) != null) "手で選んだものに戻す" else "日本語の音声なら日本語・字幕オフ") + "）：" +
+                    "音声 ${name(audio, host.audioTrack)}${choice.audio?.let { " → " + name(audio, it) } ?: ""}、" +
+                    "字幕 ${name(spu, host.spuTrack)}${choice.spu?.let { " → " + name(spu, it) } ?: ""}" +
+                    "（音声の一覧：${audio.filter { it.id != -1 }.joinToString { it.name }}）",
+            )
+        }
         choice.audio?.let { host.setAudioTrack(it) }
         choice.spu?.let { host.setSpuTrack(it) }
     }
