@@ -1,69 +1,61 @@
 package com.ryose.videoplayer
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
-import android.text.format.Formatter
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.widget.SearchView
-import androidx.core.content.ContextCompat
 import androidx.core.view.MenuProvider
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import android.provider.MediaStore
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
-/** 「動画」タブ：端末内のすべての動画（すべて／フォルダ別、リスト／グリッド） */
+/**
+ * 「動画」タブ：端末内のすべての動画（すべて／フォルダ別、リスト／グリッド）。
+ * 状態と操作は VideosViewModel にあり、ここは表示するだけ
+ */
 class VideosFragment : BaseListFragment() {
 
-    private enum class Sort { DATE, NAME, DURATION }
-
-    private var all: List<Video> = emptyList()
-    private var shownCount = 0
-    private var query = ""
-    private var sort = Sort.DATE
-    /** 絞り込み・並べ替えの処理（新しく始めたら前のものは取り消す） */
-    private var filterJob: Job? = null
-    private var loaded = false
-    private var loadedWithAccess = false
-    /** フォルダ別表示で開いているフォルダ（null ならフォルダの一覧） */
-    private var openedFolder: String? = null
-    private var savedScroll: Parcelable? = null
+    private lateinit var vm: VideosViewModel
     private lateinit var allChip: Chip
     private lateinit var folderChip: Chip
     /** 「一部の動画だけを表示しています」の帯 */
     private lateinit var limitedBanner: View
     /** 「選び直す」で許可の画面を出したので、戻ってきたら読み込み直す */
     private var reloadOnResume = false
+    /** フォルダに入る前の一覧のスクロール位置（戻ったときに戻す） */
+    private var savedScroll: Parcelable? = null
+    /** フォルダを開いた・閉じたあと、その一覧を表示したときにすること（一番上を見せる・前の位置に戻す） */
+    private var afterShown: Pair<String?, () -> Unit>? = null
 
     private val backCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = closeFolder()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        vm = ViewModelProvider(this)[VideosViewModel::class.java]
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-        openedFolder = savedInstanceState?.getString(KEY_FOLDER)
-        sort = runCatching { Sort.valueOf(AppSettings.videosSort(requireContext())) }.getOrDefault(Sort.DATE)
         // 動画が増えた・消えたら自動で読み込み直す
         viewLifecycleOwner.lifecycle.addObserver(
-            MediaWatcher(requireContext().applicationContext, MediaStore.Video.Media.EXTERNAL_CONTENT_URI) { if (loaded) load() }
+            MediaWatcher(requireContext().applicationContext, MediaStore.Video.Media.EXTERNAL_CONTENT_URI) {
+                if (vm.state.value.loaded) vm.load()
+            }
         )
 
         // 「すべて」「フォルダ別」の切り替え
@@ -76,19 +68,15 @@ class VideosFragment : BaseListFragment() {
             text = label
             isCheckable = true
             setOnClickListener {
-                if (AppSettings.videosByFolder(requireContext()) != byFolder) {
-                    AppSettings.setVideosByFolder(requireContext(), byFolder)
-                    openedFolder = null
-                    if (loaded) applyFilter()
-                }
-                updateChips()
+                vm.setByFolder(byFolder)
+                updateChips(vm.state.value)
             }
         }
         allChip = chip("すべて", false)
         folderChip = chip("フォルダ別", true)
         chips.addView(allChip)
         chips.addView(folderChip)
-        updateChips()
+        updateChips(vm.state.value)
 
         limitedBanner = view.findViewById(R.id.limitedBanner)
         view.findViewById<View>(R.id.limitedReselect).setOnClickListener {
@@ -96,39 +84,46 @@ class VideosFragment : BaseListFragment() {
             reloadOnResume = true
             (activity as? MainActivity)?.requestMediaAccess()
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect(::render)
+            }
+        }
     }
 
-    /**
-     * Android 14 以降で「選択した写真と動画」だけを許可されているか
-     * （「すべて許可」や「すべてのファイルへのアクセス」があれば false）
-     */
-    private fun isLimitedAccess(ctx: android.content.Context): Boolean {
-        if (Build.VERSION.SDK_INT < 34 || ctx.hasStorageAccess()) return false
-        fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
-        return granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) && !granted(Manifest.permission.READ_MEDIA_VIDEO)
+    private fun render(s: VideosViewModel.UiState) {
+        updateChips(s)
+        limitedBanner.isVisible = s.hasAccess && s.limited
+        backCallback.isEnabled = isResumed && s.openedFolder != null
+        when {
+            !s.hasAccess -> showNeedPermission()
+            !s.loaded -> loading.visibility = View.VISIBLE
+            else -> {
+                showRows(s.rows, s.emptyMessage)
+                // フォルダを開いた・閉じた直後なら、その一覧が出たところで位置を合わせる
+                afterShown?.let { (folder, action) ->
+                    if (folder == s.openedFolder) {
+                        afterShown = null
+                        action()
+                    }
+                }
+            }
+        }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        openedFolder?.let { outState.putString(KEY_FOLDER, it) }
-    }
-
-    private fun updateChips() {
-        val byFolder = AppSettings.videosByFolder(requireContext())
-        allChip.isChecked = !byFolder
-        folderChip.isChecked = byFolder
+    private fun updateChips(s: VideosViewModel.UiState) {
+        allChip.isChecked = !s.byFolder
+        folderChip.isChecked = s.byFolder
     }
 
     override fun onResume() {
         super.onResume()
         applyLayout()
-        updateChips()
-        if (!loaded || reloadOnResume || requireContext().hasMediaAccess(audio = false) != loadedWithAccess) {
-            reloadOnResume = false
-            load()
-        } else {
-            applyFilter()
-        }
+        vm.refreshIfNeeded(force = reloadOnResume)
+        reloadOnResume = false
+        // 再生画面などから戻ったとき、お気に入りの ★ を付け直す
+        render(vm.state.value)
     }
 
     override fun onPause() {
@@ -136,12 +131,7 @@ class VideosFragment : BaseListFragment() {
         backCallback.isEnabled = false
     }
 
-    override fun subtitle() = when {
-        openedFolder != null -> "${File(openedFolder!!).name}（${shownCount} 本）"
-        all.isEmpty() -> null
-        AppSettings.videosByFolder(requireContext()) -> "${shownCount} フォルダ"
-        else -> "${shownCount} 本の動画"
-    }
+    override fun subtitle() = vm.state.value.subtitle
 
     /** リスト／グリッドの切り替え（グリッドでは見出しやフォルダの行は横いっぱいに） */
     private fun applyLayout() {
@@ -166,105 +156,38 @@ class VideosFragment : BaseListFragment() {
         }
     }
 
-    override fun onFilesChanged() = load()
+    override fun onFilesChanged() = vm.load()
 
-    private fun load() {
-        val ctx = requireContext()
-        loadedWithAccess = ctx.hasMediaAccess(audio = false)
-        limitedBanner.isVisible = loadedWithAccess && isLimitedAccess(ctx)
-        if (!loadedWithAccess) {
-            showNeedPermission()
-            return
-        }
-        if (!loaded) loading.visibility = View.VISIBLE
-        viewLifecycleOwner.lifecycleScope.launch {
-            all = withContext(Dispatchers.IO) {
-                MediaFiles.queryAllVideos(ctx).also { videos ->
-                    // 以前のバージョンで保存した「続きから再生」の位置を引き継ぐ
-                    videos.forEach { v -> v.path?.let { resume.migrate(v.uri.toString(), it) } }
-                }
-            }
-            loaded = true
-            applyFilter()
-        }
-    }
-
-    private fun folderOf(v: Video) = v.path?.let { File(it).parent } ?: v.folder
-
-    /**
-     * 検索・並べ替えをして一覧に表示する。数千本あっても入力がもたつかないように、画面の処理とは別のところで行う
-     * debounce が true（検索の入力中）なら、入力が止まるまで少し待つ
-     */
-    private fun applyFilter(debounce: Boolean = false, onShown: (() -> Unit)? = null) {
-        val ctx = context ?: return
-        val all = all
-        val query = query
-        val sort = sort
-        val folder = openedFolder
-        val byFolder = AppSettings.videosByFolder(ctx)
-        filterJob?.cancel()
-        filterJob = viewLifecycleOwner.lifecycleScope.launch {
-            if (debounce) delay(200)
-            val rows = withContext(Dispatchers.Default) { buildRows(ctx, all, query, sort, folder, byFolder) }
-            shownCount = rows.size
-            backCallback.isEnabled = isResumed && folder != null
-            // 動画が 1 本も無いのか、検索に当てはまるものが無いのかを分けて伝える
-            showRows(rows, if (query.isBlank() || all.isEmpty()) getString(R.string.no_videos) else "「$query」に一致する動画はありません。")
-            onShown?.invoke()
-        }
-    }
-
-    private fun buildRows(
-        ctx: android.content.Context, all: List<Video>, query: String, sort: Sort, folder: String?, byFolder: Boolean,
-    ): List<Row> {
-        val matched = all.filter {
-            query.isBlank() || it.title.contains(query, ignoreCase = true) || it.folder.contains(query, ignoreCase = true)
-        }
-        fun sorted(list: List<Video>) = when (sort) {
-            Sort.DATE -> list.sortedByDescending { it.dateAdded }
-            Sort.NAME -> list.sortedWith(compareBy(NaturalOrder) { it.title })
-            Sort.DURATION -> list.sortedByDescending { it.durationMs }
-        }
-        fun mediaRow(v: Video) = Row.Media(v.toItem(), "${v.folder} · ${Formatter.formatShortFileSize(ctx, v.size)}")
-
-        return when {
-            folder != null -> sorted(matched.filter { folderOf(it) == folder }).map(::mediaRow)
-            byFolder -> matched.groupBy { folderOf(it) }.entries
-                .sortedWith(compareBy(NaturalOrder) { File(it.key).name })
-                .map { (dir, videos) ->
-                    val total = videos.sumOf { it.durationMs }
-                    val info = "${videos.size} 本" + if (total > 0) " · ${formatTime(total)}" else ""
-                    Row.Folder(File(dir).name.ifEmpty { dir }, info, R.drawable.ic_folder, id = "vfolder:$dir")
-                }
-            else -> sorted(matched).map(::mediaRow)
-        }
+    private fun openFolder(dir: String?, after: () -> Unit) {
+        afterShown = dir to after
+        vm.openFolder(dir)
     }
 
     override fun goToTopLevel(): Boolean {
-        if (openedFolder == null) return false
-        openedFolder = null
+        if (vm.state.value.openedFolder == null) return false
         savedScroll = null
-        applyFilter { list.scrollToPosition(0) }
+        openFolder(null) { list.scrollToPosition(0) }
         return true
     }
 
     private fun closeFolder() {
-        openedFolder = null
         val scroll = savedScroll
         savedScroll = null
-        applyFilter { scroll?.let { list.layoutManager?.onRestoreInstanceState(it) } }
+        openFolder(null) { scroll?.let { list.layoutManager?.onRestoreInstanceState(it) } }
     }
 
     override fun onRowClick(position: Int) {
         when (val row = adapter.rows.getOrNull(position)) {
             is Row.Folder -> row.id?.removePrefix("vfolder:")?.let { dir ->
                 savedScroll = list.layoutManager?.onSaveInstanceState()
-                openedFolder = dir
-                applyFilter { list.scrollToPosition(0) }
+                openFolder(dir) { list.scrollToPosition(0) }
             }
             // 「すべて」の一覧は関係ない動画が並ぶので、終わったら次へ進むかは設定しだい（初期設定は進まない）。
             // フォルダを開いて再生したときは、いつも次へ進む
-            is Row.Media -> playMediaAt(position, advance = openedFolder != null || AppSettings.videosAutoNext(requireContext()))
+            is Row.Media -> playMediaAt(
+                position,
+                advance = vm.state.value.openedFolder != null || AppSettings.videosAutoNext(requireContext()),
+            )
             else -> {}
         }
     }
@@ -274,7 +197,7 @@ class VideosFragment : BaseListFragment() {
 
     override fun extraActions(row: Row): List<SheetItem> {
         val dir = (row as? Row.Folder)?.id?.removePrefix("vfolder:") ?: return emptyList()
-        val items = all.filter { folderOf(it) == dir }.sortedWith(compareBy(NaturalOrder) { it.title }).map { it.toItem() }
+        val items = vm.videosIn(dir)
         if (items.isEmpty()) return emptyList()
         return listOf(
             SheetItem(R.drawable.ic_play, "再生") { requireActivity().playItems(items, 0) },
@@ -289,6 +212,7 @@ class VideosFragment : BaseListFragment() {
             val searchItem = menu.findItem(R.id.action_search)
             val searchView = searchItem.actionView as SearchView
             searchView.queryHint = getString(R.string.search)
+            val query = vm.state.value.query
             if (query.isNotEmpty()) {
                 searchItem.expandActionView()
                 searchView.setQuery(query, false)
@@ -296,19 +220,17 @@ class VideosFragment : BaseListFragment() {
             searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
                 override fun onQueryTextSubmit(q: String?) = true
                 override fun onQueryTextChange(q: String?): Boolean {
-                    if (query == q.orEmpty()) return true
-                    query = q.orEmpty()
-                    if (loaded) applyFilter(debounce = true)
+                    vm.setQuery(q.orEmpty())
                     return true
                 }
             })
         }
 
         override fun onPrepareMenu(menu: Menu) {
-            val id = when (sort) {
-                Sort.DATE -> R.id.sort_date
-                Sort.NAME -> R.id.sort_name
-                Sort.DURATION -> R.id.sort_duration
+            val id = when (vm.state.value.sort) {
+                VideosViewModel.Sort.DATE -> R.id.sort_date
+                VideosViewModel.Sort.NAME -> R.id.sort_name
+                VideosViewModel.Sort.DURATION -> R.id.sort_duration
             }
             menu.findItem(id)?.isChecked = true
             menu.findItem(R.id.action_grid)?.isChecked = AppSettings.videosGrid(requireContext())
@@ -316,10 +238,10 @@ class VideosFragment : BaseListFragment() {
 
         override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
             when (menuItem.itemId) {
-                R.id.action_refresh -> load()
-                R.id.sort_date -> setSort(Sort.DATE)
-                R.id.sort_name -> setSort(Sort.NAME)
-                R.id.sort_duration -> setSort(Sort.DURATION)
+                R.id.action_refresh -> vm.load()
+                R.id.sort_date -> setSort(VideosViewModel.Sort.DATE)
+                R.id.sort_name -> setSort(VideosViewModel.Sort.NAME)
+                R.id.sort_duration -> setSort(VideosViewModel.Sort.DURATION)
                 R.id.action_grid -> {
                     AppSettings.setVideosGrid(requireContext(), !AppSettings.videosGrid(requireContext()))
                     requireActivity().invalidateOptionsMenu()
@@ -331,14 +253,8 @@ class VideosFragment : BaseListFragment() {
         }
     }
 
-    private fun setSort(s: Sort) {
-        sort = s
-        AppSettings.setVideosSort(requireContext(), s.name)
+    private fun setSort(s: VideosViewModel.Sort) {
+        vm.setSort(s)
         requireActivity().invalidateOptionsMenu()
-        if (loaded) applyFilter()
-    }
-
-    private companion object {
-        const val KEY_FOLDER = "folder"
     }
 }

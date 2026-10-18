@@ -107,6 +107,9 @@ dependencies {
     // 起動中の画面（Android 12 以降のスプラッシュ画面を、古い端末でも同じように出す）
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    // 画面の状態を、画面の作り直し（回転など）を越えて持つ（ViewModel・viewModelScope・SavedStateHandle）
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.10.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
