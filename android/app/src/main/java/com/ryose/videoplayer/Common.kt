@@ -178,6 +178,17 @@ class ResumeStore(private val context: Context) {
 
     fun clear(key: String) {
         prefs.edit { remove(key) }
+        if (titles.contains(key)) titles.edit { remove(key) }
+    }
+
+    /** DVD（ISO）は、続きの位置がどのタイトル（話）の中かも覚える（メニューから選び直さずに続きへ戻すため） */
+    private val titles by lazy { context.getSharedPreferences("resume_title", Context.MODE_PRIVATE) }
+
+    /** 覚えている DVD のタイトル（無ければ -1） */
+    fun getTitle(key: String): Int = titles.getInt(key, -1)
+
+    fun saveTitle(key: String, title: Int) {
+        if (title > 0 && titles.getInt(key, -1) != title) titles.edit { putInt(key, title) }
     }
 
     /** SDカードが抜かれているだけの場合は消さないように、そのストレージ自体が読めるか確かめる */

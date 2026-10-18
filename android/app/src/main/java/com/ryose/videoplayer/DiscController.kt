@@ -27,20 +27,21 @@ class DiscController(private val handler: Handler, private val host: Host) {
         fun setVlcTime(ms: Long)
         /** タイトルが変わった（画面に伝える） */
         fun onTitleChanged()
-        /** メニューから本編などに出た（音声・字幕を見直す） */
-        fun onLeftMenu()
+        /** 本編などを再生している（メニューではない）。1 秒ごとに呼ぶので、音声・字幕を見直す */
+        fun onPlayingContent()
     }
 
     /** 本編を選ぶのを待っている再生（generation の番号。無ければ -1） */
     private var titlePending = -1
     /** 本編を選んだあとに移る位置（続きから再生） */
     private var startMs = 0L
+    /** 本編の代わりに選ぶタイトル（前回の続きで、見ていたタイトル。無ければ null） */
+    private var resumeTitle: Int? = null
     /** メニューから始めた DVD で、メニューに映像があるかを見る再生 */
     private var menuWatch = -1
     /** メニューから始めた DVD で、メニューより先に流れる宣伝などを飛ばす再生（始めるのを待っている／見ている間） */
     private var jumpPending = -1
     private var jumpGen = -1
-    private var wasInMenu = false
 
     /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
     fun titles(): Array<MediaPlayer.Title> = host.vlcTitles()
@@ -80,10 +81,12 @@ class DiscController(private val handler: Handler, private val host: Host) {
 
     /**
      * ISO を開く前に、どう始めるかを決める。
-     * メニューから始めないときは、再生が始まってから本編（いちばん長いタイトル）を選び、続きの位置へ移る
+     * メニューから始めないときは、再生が始まってから本編（いちばん長いタイトル）を選び、続きの位置へ移る。
+     * [resumeTitle] があれば、本編の代わりにそのタイトル（前回の続きで見ていた話）を選ぶ
      */
-    fun prepare(gen: Int, startInMenu: Boolean, startMs: Long) {
+    fun prepare(gen: Int, startInMenu: Boolean, startMs: Long, resumeTitle: Int? = null) {
         this.startMs = startMs
+        this.resumeTitle = resumeTitle
         if (startInMenu) {
             menuWatch = gen
             jumpPending = gen
@@ -176,7 +179,8 @@ class DiscController(private val handler: Handler, private val host: Host) {
             if (tries < 10) scheduleMainTitle(gen, tries + 1) else seekStart(gen)
             return
         }
-        val main = DiscRules.mainTitle(titles)
+        val main = resumeTitle?.takeIf { it in titles.indices && !titles[it].isMenu } ?: DiscRules.mainTitle(titles)
+        resumeTitle = null
         if (main != null && main != host.vlcTitle()) {
             host.setVlcTitle(main)
             host.onTitleChanged()
@@ -197,8 +201,9 @@ class DiscController(private val handler: Handler, private val host: Host) {
         override fun run() {
             if (!host.isDiscItem || !host.hasMedia()) return
             val inMenu = isInMenu()
-            if (wasInMenu && !inMenu) host.onLeftMenu()
-            wasInMenu = inMenu
+            // メニューから出たとき、と本編などを再生している間は、音声・字幕を見直す
+            // （区切りが変わるたびにディスクが音声を 1 本目に戻すことがある。クリミナル・マインドの ISO の命令で確認）
+            if (!inMenu) host.onPlayingContent()
             handler.postDelayed(this, 1000)
         }
     }

@@ -378,11 +378,14 @@ class PlayerActivity : AppCompatActivity() {
         s.addListener(listener)
         // ネットワーク再生でログインや証明書の確認を求められたときにダイアログを出す
         s.setDialogCallbacks(dialogHandler)
-        // 再生サービスが一度終了していたら、覚えておいたリストで続きから再生し直す
+        // 再生サービスが一度終了していたら（アプリが OS に終了させられたあとに、アプリの一覧から戻ったときなど）、
+        // 覚えておいた前回の続き（どの動画のどこまで）から再生し直す。前回の続きが無いときだけ、最初に開いたときの指示で開き直す
+        // （以前は最初に開いたときの指示を使っていたので、次の話に進んでいても最初の話を最初から再生していた）
+        var fallback: Intent? = null
         restoreIntent?.let { ri ->
             restoreIntent = null
             if (s.currentItem == null && loadIntent == null && !ri.safeBooleanExtra(PlaybackService.EXTRA_FROM_SESSION)) {
-                loadIntent = ri
+                fallback = ri
             }
         }
         val li = loadIntent
@@ -395,10 +398,12 @@ class PlayerActivity : AppCompatActivity() {
         // 再生するリストづくり（ContentProvider への問い合わせ）や前回の続きの読み込みは裏で行う
         scheduleLoading()
         lifecycleScope.launch {
-            val load = li?.let { playlistFromIntentAsync(it) }
+            var load = li?.let { playlistFromIntentAsync(it) }
             val saved = if (load == null && s.currentItem == null) {
                 withContext(Dispatchers.IO) { LastSession.load(applicationContext) }
             } else null
+            val fb = fallback
+            if (load == null && fb != null && saved?.restorable(videoOnly = true) != true) load = playlistFromIntentAsync(fb)
             // 待っている間に画面を離れた・別の動画が選ばれた
             if (gen != readyGeneration || svc !== s) return@launch
             if (loadIntent === li) loadIntent = null

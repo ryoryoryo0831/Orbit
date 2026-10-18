@@ -690,6 +690,8 @@ class PlaybackService : Service() {
         val s = saved ?: return false
         // わざと終わらせた再生は、画面に戻っただけでは元に戻さない（ボタンで再生を頼まれたときは戻す）
         if (!s.restorable(videoOnly = videoOnly, audioOnly = audioOnly, evenIfStopped = evenIfStopped)) return false
+        // DVD（ISO）は、メニューからではなく見ていたタイトル（話）の続きから
+        resumeDiscOnce = true
         load(s.items, s.index, s.shuffle, paused = !play, advance = s.advance, presetOrder = s.order)
         return currentItem != null
     }
@@ -702,6 +704,9 @@ class PlaybackService : Service() {
     private fun playCurrent(startMs: Long, paused: Boolean) {
         val item = currentItem ?: return
         val gen = ++playGeneration
+        // 前回の続きとして開くのは、読み込み直した最初の 1 回だけ
+        resumeDiscGen = if (resumeDiscOnce) gen else -1
+        resumeDiscOnce = false
         preparing = true
         preparingStart = startMs.coerceAtLeast(0)
         preparingPaused = paused
@@ -801,10 +806,12 @@ class PlaybackService : Service() {
         if (item.isDiscImage) {
             // Blu-ray のメニュー（多くは Java で動く）は Android では動かないので出さない
             media.addOption(":no-bluray-menu")
-            val startInMenu = AppSettings.dvdMenuStart(this)
+            // 前回の続き（アプリが OS に終了させられたあとなど）は、メニューからではなく、見ていたタイトル（話）の続きから
+            val resumeTitle = if (resumeDiscGen == gen && startMs > 0) resume.getTitle(item.key).takeIf { it > 0 } else null
+            val startInMenu = AppSettings.dvdMenuStart(this) && resumeTitle == null
             // メニューから始めないときは DVD もメニューを出さない（本編は DiscController が選ぶ。メニューは再生画面の︙から開ける）
             if (!startInMenu) media.addOption(":no-dvdnav-menu")
-            disc.prepare(gen, startInMenu, startMs)
+            disc.prepare(gen, startInMenu, startMs, resumeTitle)
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
         }
@@ -1265,7 +1272,7 @@ class PlaybackService : Service() {
             player.setTime(ms)
         }
         override fun onTitleChanged() = dispatch { it.onModesChanged() }
-        override fun onLeftMenu() = tracks.schedule()
+        override fun onPlayingContent() = tracks.schedule()
     })
 
     /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
@@ -1291,7 +1298,7 @@ class PlaybackService : Service() {
     // ---------- 音声・字幕の選び方 ----------
     // 選ぶのは TrackSelector、判断は TrackRules（テストできる部分）
 
-    private val tracks = TrackSelector(handler, object : TrackSelector.Host {
+    private val tracks = TrackSelector(handler, TrackChoiceStore(this), object : TrackSelector.Host {
         override fun trackTarget(): String? {
             val item = currentItem ?: return null
             return if (item.isAudio || preparing || isInDiscMenu()) null else item.key
@@ -1455,6 +1462,11 @@ class PlaybackService : Service() {
         updateSession()
     }
 
+    /** 前回の続きを読み込み直すところ（DVD をメニューからではなく、見ていたタイトルの続きから始める） */
+    private var resumeDiscOnce = false
+    /** 見ていたタイトルの続きから始める DVD の再生の番号（playGeneration。無ければ -1） */
+    private var resumeDiscGen = -1
+
     /** 続きから再生する位置（設定でオフなら最初から） */
     private fun startPositionOf(item: PlaylistItem): Long =
         if (AppSettings.resume(this)) resume.get(item.key) else 0L
@@ -1468,6 +1480,11 @@ class PlaybackService : Service() {
         if (t < 0 || len <= 0) return
         // 普通の長さの曲は続きから再生しない（10分以上の音声＝ラジオや朗読などだけ）
         if (item.isAudio && len < 10 * 60_000L) return
+        if (item.isDiscImage) {
+            // DVD のメニューの中の位置は覚えない。本編などは、どのタイトル（話）かも覚える
+            if (isInDiscMenu()) return
+            resume.saveTitle(item.key, currentTitle())
+        }
         resume.save(item.key, t, len)
     }
 
