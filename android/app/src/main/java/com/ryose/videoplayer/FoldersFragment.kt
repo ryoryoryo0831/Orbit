@@ -41,6 +41,10 @@ class FoldersFragment : BaseListFragment() {
     /** 移動したあと、その場所の一覧を表示したときに戻すスクロール位置（null なら一番上） */
     private var pendingScroll: Pair<String, Parcelable?>? = null
     private var shownLocKey: String? = null
+    /** 今出している場所の表示（同じなら作り直さない。ネットワークの読み込み中に何度も作り直すと、テレビで選択が外れる） */
+    private var shownPath: Pair<List<String>, Boolean>? = null
+    /** 画面に戻ってきたが、再生サービス（ログインの確認のダイアログ）につながるのを待っている */
+    private var visiblePending = false
 
     // ログインの確認などのダイアログと、ネットワークのフォルダをまとめて再生するときは、再生サービスの VLC を使う
     private var svc: PlaybackService? = null
@@ -62,7 +66,14 @@ class FoldersFragment : BaseListFragment() {
         requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
         connection = PlaybackConnection(requireContext(), autoCreate = true, onConnected = { s ->
             svc = s
-            if (isResumed) s.setDialogCallbacks(dialogHandler)
+            if (isResumed) {
+                s.setDialogCallbacks(dialogHandler)
+                // ネットワークの閲覧はログインの確認を出せるようになってから（以前と同じ順番）
+                if (visiblePending) {
+                    visiblePending = false
+                    vm.onVisible()
+                }
+            }
         }, onDisconnected = { svc = null })
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -85,17 +96,24 @@ class FoldersFragment : BaseListFragment() {
 
     override fun onResume() {
         super.onResume()
-        svc?.setDialogCallbacks(dialogHandler)
-        // 再生から戻ってきたときなどは、スクロール位置を保ったまま読み込み直す
-        // （ネットワークのフォルダは覚えておいた中身を出すので、待たされない）
-        keepScroll()
-        vm.onVisible()
+        // 戻るボタン・★の表示を今の状態で付け直す（中身が同じなら StateFlow は知らせてこないため）
+        render(vm.state.value)
+        // 読み込み直す（ネットワークのフォルダは覚えておいた中身を出すので、待たされない。
+        // 行が同じならスクロール位置もそのまま）。ログインの確認を出せるよう、再生サービスにつながってから
+        val s = svc
+        if (s != null) {
+            s.setDialogCallbacks(dialogHandler)
+            vm.onVisible()
+        } else {
+            visiblePending = true
+        }
     }
 
     override fun onPause() {
         super.onPause()
         // 他のタブを見ているときは「戻る」でフォルダを上がらない
         backCallback.isEnabled = false
+        visiblePending = false
         vm.onHidden()
         svc?.setDialogCallbacks(null)
     }
@@ -116,7 +134,11 @@ class FoldersFragment : BaseListFragment() {
             shownLocKey = s.locKey
             activity?.invalidateOptionsMenu()
         }
-        renderPath(s)
+        val path = s.labels to (s.current is Loc.Net)
+        if (path != shownPath) {
+            shownPath = path
+            renderPath(s)
+        }
         when {
             s.needPermission -> showNeedPermission()
             // ネットワークのフォルダを読み込み始めたところ：空のお知らせは出さずに、くるくるだけ
@@ -136,13 +158,16 @@ class FoldersFragment : BaseListFragment() {
                 if (s.loading) loading.visibility = View.VISIBLE
             }
         }
-        // 移動した先の一覧が出たら、スクロール位置を戻す
-        val pending = pendingScroll
-        if (pending != null && pending.first == s.locKey && (s.rows.isNotEmpty() || !s.loading)) {
-            pendingScroll = null
-            val state = pending.second
-            if (state != null) list.layoutManager?.onRestoreInstanceState(state) else list.scrollToPosition(0)
-        }
+        applyPendingScroll(s)
+    }
+
+    /** 移動した先の一覧が出たら、スクロール位置を戻す（null なら一番上） */
+    private fun applyPendingScroll(s: FoldersViewModel.UiState) {
+        val pending = pendingScroll ?: return
+        if (pending.first != s.locKey || (s.rows.isEmpty() && s.loading)) return
+        pendingScroll = null
+        val state = pending.second
+        if (state != null) list.layoutManager?.onRestoreInstanceState(state) else list.scrollToPosition(0)
     }
 
     // 中に入っているときは、上のバーに場所を表示する
@@ -200,48 +225,48 @@ class FoldersFragment : BaseListFragment() {
 
     private val currentKey get() = vm.state.value.current?.key ?: ROOT_KEY
 
-    /** 読み込み直したあとも、今のスクロール位置のまま */
-    private fun keepScroll() {
-        pendingScroll = currentKey to list.layoutManager?.onSaveInstanceState()
+    /**
+     * 移動したあとのスクロール位置を決める。ViewModel は移動の中ですぐに表示を更新することがある
+     * （トップ・覚えていたネットワークのフォルダなど）ので、移動のあとにも、もう表示されていればすぐ当てる
+     */
+    private fun scrollAfterMove(key: String?, state: Parcelable?) {
+        key ?: return
+        pendingScroll = key to state
+        applyPendingScroll(vm.state.value)
     }
 
     private fun push(loc: Loc) {
         scrollStates[currentKey] = list.layoutManager?.onSaveInstanceState()
-        pendingScroll = vm.push(loc) to null
+        scrollAfterMove(vm.push(loc), null)
     }
 
     private fun popTo(level: Int) {
         val key = vm.popTo(level) ?: return
-        pendingScroll = key to scrollStates[key]
+        scrollAfterMove(key, scrollStates[key])
     }
 
     override fun goToTopLevel(): Boolean {
         if (vm.state.value.stack.isEmpty()) return false
-        pendingScroll = ROOT_KEY to null
         vm.goTop()
+        scrollAfterMove(ROOT_KEY, null)
         return true
     }
 
     private fun goUp() {
         val key = vm.goUp() ?: return
-        pendingScroll = key to scrollStates.remove(key)
+        scrollAfterMove(key, scrollStates.remove(key))
     }
 
     private fun openFavorite(entry: FavoriteFolders.Entry) {
         scrollStates[ROOT_KEY] = list.layoutManager?.onSaveInstanceState()
         vm.openFavorite(entry)
-        pendingScroll = currentKey to null
+        scrollAfterMove(currentKey, null)
     }
 
-    override fun onFilesChanged() {
-        keepScroll()
-        vm.reload()
-    }
+    // 読み込み直しても、行が同じか少し変わっただけなら、一覧のスクロール位置はそのまま残る
+    override fun onFilesChanged() = vm.reload()
 
-    private fun reloadKeepingScroll() {
-        keepScroll()
-        vm.reload()
-    }
+    private fun reloadKeepingScroll() = vm.reload()
 
     override fun onGrantClick() {
         (activity as? MainActivity)?.requestStorageAccess()

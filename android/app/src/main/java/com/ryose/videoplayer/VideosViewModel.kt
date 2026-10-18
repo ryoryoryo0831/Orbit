@@ -80,6 +80,8 @@ class VideosViewModel(app: Application, private val saved: SavedStateHandle) : A
 
     /** 一覧に出していた検索の文字（入力中だけ少し待ってから絞り込むため） */
     private var lastQuery = ""
+    /** 読み込み中のもの（新しく読み込み始めたら、古いほうの結果は使わない） */
+    private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -107,7 +109,8 @@ class VideosViewModel(app: Application, private val saved: SavedStateHandle) : A
         val has = context.hasMediaAccess(audio = false)
         access.value = Access(has, has && isLimitedAccess(context))
         if (!has) return
-        viewModelScope.launch { videos.value = repository.all() }
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { videos.value = repository.all() }
     }
 
     fun setQuery(q: String) {
@@ -124,6 +127,8 @@ class VideosViewModel(app: Application, private val saved: SavedStateHandle) : A
         AppSettings.setVideosByFolder(context, value)
         saved[KEY_FOLDER] = null
         byFolder.value = value
+        // 切り替えのボタンはすぐに合わせる（一覧を作り直すのは少しあとになる）
+        _state.value = _state.value.copy(byFolder = value)
     }
 
     fun openFolder(dir: String?) {

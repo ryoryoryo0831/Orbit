@@ -53,6 +53,8 @@ class HistoryFragment : BaseListFragment() {
 
     override fun onResume() {
         super.onResume()
+        // お気に入りの ★ を付け直す（中身が同じなら StateFlow は知らせてこないため）
+        render(vm.state.value)
         // 「5 分前」などを今の時刻で作り直す
         vm.refresh()
     }

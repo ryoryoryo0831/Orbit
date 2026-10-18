@@ -63,6 +63,8 @@ class MusicViewModel(app: Application, private val saved: SavedStateHandle) : An
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var lastQuery = ""
+    /** 読み込み中のもの（新しく読み込み始めたら、古いほうの結果は使わない） */
+    private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -91,7 +93,8 @@ class MusicViewModel(app: Application, private val saved: SavedStateHandle) : An
         val has = context.hasMediaAccess(audio = true)
         hasAccess.value = has
         if (!has) return
-        viewModelScope.launch { songs.value = repository.all() }
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { songs.value = repository.all() }
     }
 
     fun setQuery(q: String) {
@@ -103,6 +106,8 @@ class MusicViewModel(app: Application, private val saved: SavedStateHandle) : An
         AppSettings.setMusicMode(context, m.name)
         open(null)
         saved[KEY_MODE] = m.name
+        // 切り替えのボタンはすぐに合わせる（一覧を作り直すのは少しあとになる）
+        _state.value = _state.value.copy(mode = m)
     }
 
     /** アルバム・アーティストを開く（null で閉じる） */

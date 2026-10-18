@@ -254,8 +254,9 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
 
     /** トップ：お気に入り・ストレージ・登録したサーバー・見つかったサーバー */
     private fun loadTop() {
-        // 先に今わかっているもので出してから、ストレージの一覧を読み直す
-        renderTop()
+        // ストレージの一覧が分かっていれば先に出してから読み直す（初めてのときは、読んでから出す。
+        // テレビで最初に選ぶ行がストレージになるように）
+        if (roots.isNotEmpty()) renderTop()
         loadJob = viewModelScope.launch {
             roots = withContext(Dispatchers.IO) { MediaFiles.roots(context) }
             renderTop()
