@@ -59,6 +59,16 @@ class AbRangeView @JvmOverloads constructor(context: Context, attrs: AttributeSe
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
+    /**
+     * 高さはシークバーに合わせる（親の FrameLayout が決める）。View の初期の測り方だと、高さが決まっていないとき
+     * （wrap_content の親の中）に「使える高さ全部」を自分の高さにしてしまい、音楽の画面ではジャケットと
+     * ボタンが画面の外へ押し出されていた。決まった高さを渡されたときだけその高さにする
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val height = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY) MeasureSpec.getSize(heightMeasureSpec) else 0
+        setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthMeasureSpec), height)
+    }
+
     fun set(a: Long, b: Long, length: Long) {
         if (a == this.a && b == this.b && length == this.length) return
         this.a = a
