@@ -120,6 +120,9 @@ class AudioPlayerActivity : AppCompatActivity() {
         findViewById<View>(R.id.moreButton).setOnClickListener { showMoreMenu() }
         playButton.setOnClickListener { svc?.togglePlay() }
         findViewById<View>(R.id.prevButton).setOnClickListener { svc?.previous() }
+        // 何秒か戻す・進む（秒数は設定の「スキップする秒数」。動画のダブルタップ・小窓と同じ）
+        findViewById<View>(R.id.rewindButton).setOnClickListener { svc?.seekBy(-AppSettings.doubleTapMs(this)) }
+        findViewById<View>(R.id.forwardButton).setOnClickListener { svc?.seekBy(AppSettings.doubleTapMs(this)) }
         nextButton.setOnClickListener { svc?.next() }
         shuffleButton.setOnClickListener { svc?.toggleShuffle() }
         repeatButton.setOnClickListener { svc?.cycleRepeat() }
@@ -180,6 +183,10 @@ class AudioPlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 読み上げ用の名前に秒数を入れる（設定で変えられるので、戻ってくるたびに）
+        val sec = AppSettings.doubleTapMs(this) / 1000
+        findViewById<View>(R.id.rewindButton).contentDescription = "${sec}秒戻る"
+        findViewById<View>(R.id.forwardButton).contentDescription = "${sec}秒進む"
         svc?.let { it.setDialogCallbacks(dialogHandler) }
     }
 

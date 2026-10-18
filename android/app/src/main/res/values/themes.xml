@@ -122,6 +122,21 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
+    <!--
+      音楽の画面の再生操作の行のボタン（画面の幅に合わせて均等に並べる。細い画面でも 7 つ並ぶように、
+      左右の余白は小さくして、アイコンの大きさは上下の余白で決める）
+    -->
+    <style name="AudioControlButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:paddingHorizontal">2dp</item>
+        <item name="android:paddingVertical">15dp</item>
+        <!-- テレビのリモコンで選んでいるボタンは青い枠で見せる -->
+        <item name="android:background">@drawable/bg_focus_button</item>
+        <item name="android:scaleType">fitCenter</item>
+    </style>
+
     <!-- 自由な小窓のボタン（指で押しやすい大きさ。窓が小さいときは数を減らして並べる） -->
     <style name="PopupButton">
         <item name="android:layout_width">40dp</item>

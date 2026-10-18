@@ -20,6 +20,7 @@ import android.net.wifi.WifiManager
 import android.net.Uri
 import android.os.Binder
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -350,6 +351,15 @@ class PlaybackService : Service() {
                 override fun onSkipToPrevious() = previous()
                 override fun onSeekTo(pos: Long) = seekTo(pos)
                 override fun onStop() = stopPlayback()
+                // 何秒か戻す・進む（秒数は設定の「スキップする秒数」）
+                override fun onRewind() = seekBy(-AppSettings.doubleTapMs(this@PlaybackService))
+                override fun onFastForward() = seekBy(AppSettings.doubleTapMs(this@PlaybackService))
+                override fun onCustomAction(action: String?, extras: Bundle?) {
+                    when (action) {
+                        CUSTOM_REWIND -> onRewind()
+                        CUSTOM_FORWARD -> onFastForward()
+                    }
+                }
             })
             // アプリが止まったあとでも、イヤホンや Bluetooth の再生ボタンで前回の続きを再生できるように
             setMediaButtonReceiver(
@@ -1716,12 +1726,21 @@ class PlaybackService : Service() {
         val item = currentItem ?: return
         // 準備中は、準備が終わったあとの状態（再生か一時停止か）を出す（通知のボタンが逆にならないように）
         val playing = isPlaying
+        val skipSec = AppSettings.doubleTapMs(this) / 1000
         val state = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
                     PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                     PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or PlaybackStateCompat.ACTION_SEEK_TO or
-                    PlaybackStateCompat.ACTION_STOP
+                    PlaybackStateCompat.ACTION_STOP or PlaybackStateCompat.ACTION_REWIND or
+                    PlaybackStateCompat.ACTION_FAST_FORWARD
+            )
+            // Android 13 以降の通知・ロック画面のメディア操作は、前へ・再生・次へのほかに、ここで足したボタンを出す
+            .addCustomAction(
+                PlaybackStateCompat.CustomAction.Builder(CUSTOM_REWIND, "${skipSec}秒戻る", R.drawable.ic_stat_rewind).build()
+            )
+            .addCustomAction(
+                PlaybackStateCompat.CustomAction.Builder(CUSTOM_FORWARD, "${skipSec}秒進む", R.drawable.ic_stat_forward).build()
             )
             .setState(
                 when {
@@ -1912,6 +1931,9 @@ class PlaybackService : Service() {
         const val ACTION_PREVIOUS = "com.ryose.videoplayer.PREVIOUS"
         private const val ACTION_STOP = "com.ryose.videoplayer.STOP"
         private const val ACTION_DISMISS = "com.ryose.videoplayer.DISMISS"
+        /** 通知・ロック画面のメディア操作の「何秒か戻す・進む」 */
+        private const val CUSTOM_REWIND = "com.ryose.videoplayer.REWIND"
+        private const val CUSTOM_FORWARD = "com.ryose.videoplayer.FORWARD"
         private val RESUMING_ACTIONS = setOf(ACTION_PLAY_PAUSE, ACTION_PLAY, ACTION_NEXT, ACTION_PREVIOUS)
     }
 }
