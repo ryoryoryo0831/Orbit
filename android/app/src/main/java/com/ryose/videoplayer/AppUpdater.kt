@@ -36,8 +36,12 @@ import java.net.URL
 object AppUpdater {
     private const val LATEST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases/latest"
 
-    /** お試し版も調べるときの一覧（新しい順。iPhone 版も混ざるが、100 件まで見る） */
-    private const val LIST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases?per_page=100"
+    /**
+     * お試し版も調べるときの一覧。GitHub の並びは新しい順とは限らない（1.0.141 は 13 番目に来た）ので、
+     * 1 ページ 100 件で、最後のページ（[LIST_MAX_PAGES] ページまで）までめくって全部から選ぶ。iPhone 版も混ざる
+     */
+    private const val LIST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases?per_page=100&page="
+    private const val LIST_MAX_PAGES = 5
 
     /** 起動したとき：12 時間に 1 回まで確かめ、新しい版があれば知らせる（無ければ何も出さない） */
     fun checkOnStart(activity: AppCompatActivity) {
@@ -104,10 +108,14 @@ object AppUpdater {
     /** GitHub のいちばん新しい版を調べる（裏で）。[includePrerelease] ならお試し版も */
     private suspend fun fetchLatest(includePrerelease: Boolean): UpdateRules.Update? = withContext(Dispatchers.IO) {
         if (includePrerelease) {
-            val arr = JSONArray(getJson(LIST_URL))
-            val releases = (0 until arr.length()).map { i ->
-                val r = arr.getJSONObject(i)
-                UpdateRules.Release(r.optString("tag_name"), r.optBoolean("prerelease"), r.optBoolean("draft"), assetsOf(r))
+            val releases = mutableListOf<UpdateRules.Release>()
+            for (page in 1..LIST_MAX_PAGES) {
+                val arr = JSONArray(getJson(LIST_URL + page))
+                for (i in 0 until arr.length()) {
+                    val r = arr.getJSONObject(i)
+                    releases += UpdateRules.Release(r.optString("tag_name"), r.optBoolean("prerelease"), r.optBoolean("draft"), assetsOf(r))
+                }
+                if (arr.length() < 100) break
             }
             UpdateRules.newest(releases, includePrerelease = true, is64Bit = is64Bit())
         } else {
