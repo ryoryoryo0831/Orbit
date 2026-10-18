@@ -52,6 +52,8 @@ class AudioPlayerActivity : AppCompatActivity() {
     private var lengthMs = 0L
     /** 曲・動画・ジャケットが変わったときだけ画像を出し直す */
     private var shownArtKey: String? = null
+    /** 最後に表示した「今再生しているもの」（再生位置は 0 にしたもの。位置のほかが変わったときだけ書き換える） */
+    private var shown: PlaybackService.NowPlaying? = null
     /** 開かれた曲の読み込みが済んで、表示してよい（済むまでは、前に再生していたものを出さない） */
     private var ready = false
 
@@ -230,18 +232,31 @@ class AudioPlayerActivity : AppCompatActivity() {
 
     private fun refreshAll() {
         svc?.let { s ->
+            // 見ていない間に変わったもの（準備中の一時停止など）があっても、今の状態から出す
+            s.refreshNowPlaying()
             abBar.refresh()
             s.takeAbRestoredMessage()?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
         }
         ready = true
         lengthMs = 0
         shownArtKey = null
+        shown = null
         render(nowPlaying.state.value)
     }
 
     /** 再生サービスの「今再生しているもの」を表示する */
     private fun render(np: PlaybackService.NowPlaying?) {
         if (!ready || np == null) return
+        setLength(np.lengthMs)
+        if (!userSeeking) {
+            seekBar.progress = np.positionMs.toInt()
+            // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
+            timeCurrent.setTextIfChanged(formatTime(np.positionMs))
+        }
+        // 曲名・ジャケット・ボタンは、位置のほかが変わったときだけ書き換える（再生位置が進むたびに描き直さない）
+        val static = np.copy(positionMs = 0)
+        if (static == shown) return
+        shown = static
         val item = np.item
         titleView.text = np.title
         subtitleView.text = np.subtitle
@@ -261,12 +276,6 @@ class AudioPlayerActivity : AppCompatActivity() {
                 art.scaleType = ImageView.ScaleType.FIT_CENTER
                 art.setImageResource(if (item.isAudio) R.drawable.ic_music_note else R.drawable.ic_movie)
             }
-        }
-        setLength(np.lengthMs)
-        if (!userSeeking) {
-            seekBar.progress = np.positionMs.toInt()
-            // 秒が変わったときだけ書き換える（同じ文字でも書き換えると、毎回画面の並べ直しが起きる）
-            timeCurrent.setTextIfChanged(formatTime(np.positionMs))
         }
         playButton.setImageResource(if (np.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         playButton.contentDescription = getString(if (np.isPlaying) R.string.player_pause else R.string.player_play)

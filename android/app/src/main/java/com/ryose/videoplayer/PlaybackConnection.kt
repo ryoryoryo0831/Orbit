@@ -50,4 +50,15 @@ class PlaybackConnection(
         service = null
         onDisconnected()
     }
+
+    /**
+     * つないでいたサービスが終わった（autoCreate = false のときは stopSelf でも起きる）。
+     * このつながりはもう使えないので、つなぎ直す（次にサービスが動いたときにつながる）。
+     * autoCreate = true のつながりがある間はサービスは終わらないので、そちらは今までどおり何もしない
+     */
+    override fun onBindingDied(name: ComponentName?) {
+        if (!bound || autoCreate) return
+        unbind()
+        bind()
+    }
 }

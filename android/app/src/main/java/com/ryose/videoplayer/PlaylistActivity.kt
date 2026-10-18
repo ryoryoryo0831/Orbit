@@ -26,6 +26,8 @@ class PlaylistActivity : AppCompatActivity() {
     private lateinit var adapter: MediaAdapter
     private lateinit var listView: RecyclerView
     private lateinit var emptyText: TextView
+    /** 行をドラッグして並べ替えている途中（途中で前の保存の一覧が届いても、ドラッグ中の行を跳ばさない） */
+    private var dragging = false
 
     private val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
         override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
@@ -37,9 +39,15 @@ class PlaylistActivity : AppCompatActivity() {
 
         override fun isLongPressDragEnabled() = false
 
+        override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, actionState: Int) {
+            super.onSelectedChanged(vh, actionState)
+            if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) dragging = true
+        }
+
         override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
             super.clearView(rv, vh)
-            // 並べ替えが終わったら保存
+            dragging = false
+            // 並べ替えが終わったら保存（保存した一覧が届くので、表示はそれで合う）
             vm.setItems(currentItems())
         }
     })
@@ -50,6 +58,8 @@ class PlaylistActivity : AppCompatActivity() {
         setContentView(R.layout.activity_playlist)
         setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        // 読み込みが済むまで、アプリ名を出さない
+        supportActionBar?.title = ""
 
         vm = ViewModelProvider(this)[PlaylistViewModel::class.java]
         if (vm.playlistId == null) {
@@ -94,7 +104,7 @@ class PlaylistActivity : AppCompatActivity() {
         }
         supportActionBar?.title = s.name
         supportActionBar?.subtitle = s.subtitle
-        adapter.rows = s.rows
+        if (!dragging) adapter.rows = s.rows
         emptyText.isVisible = s.rows.isEmpty()
         if (s.isFavorites) {
             emptyText.text = "お気に入りはまだありません。\n\n動画や曲を長押しして\n「お気に入りに追加」を選ぶと、ここに入ります。"

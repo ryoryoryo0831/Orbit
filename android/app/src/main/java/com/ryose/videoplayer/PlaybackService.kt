@@ -599,23 +599,33 @@ class PlaybackService : Service() {
         listeners -= l
     }
 
-    private fun dispatch(action: (Listener) -> Unit) {
+    /** [timeMs] は TimeChanged で届いた再生位置（ほかの知らせでは null） */
+    private fun dispatch(timeMs: Long? = null, action: (Listener) -> Unit) {
         listeners.toList().forEach(action)
         // 画面に知らせることがあったら、「今再生しているもの」も新しくする
-        publishNowPlaying()
+        publishNowPlaying(timeMs)
     }
 
-    /** 画面が見る「今再生しているもの」を新しくする（同じ中身なら StateFlow は知らせない） */
-    private fun publishNowPlaying() {
+    /**
+     * 画面が見る「今再生しているもの」を新しくする（同じ中身なら StateFlow は知らせない）。
+     * 再生位置は TimeChanged の値（[timeMs]）か、読み直したとき（[refreshNowPlaying]）だけ新しくする。
+     * シークの直後にほかの知らせ（Buffering など）でまだ古い位置を読んで、シークバーを戻さないように
+     */
+    private fun publishNowPlaying(timeMs: Long? = null) {
         if (!::player.isInitialized) return
         val item = currentItem
         _nowPlaying.value = item?.let {
+            val prev = _nowPlaying.value
+            val pos = timeMs ?: prev?.takeIf { p -> p.item == it && !preparing }?.positionMs ?: position
             NowPlaying(
-                it, displayTitle(), displaySubtitle(), isPlaying, position, lengthMs, meta?.art,
+                it, displayTitle(), displaySubtitle(), isPlaying, pos, lengthMs, meta?.art,
                 shuffle, repeat, rate, sleepAt, sleepAtEnd, hasNext(),
             )
         }
     }
+
+    /** 画面に戻ってきたときなど：今の再生位置・状態を読み直して「今再生しているもの」を新しくする */
+    fun refreshNowPlaying() = publishNowPlaying(position)
 
     private fun prefs() = getSharedPreferences("player", MODE_PRIVATE)
 
@@ -846,13 +856,19 @@ class PlaybackService : Service() {
             // 再生できなかった曲・動画は、開き直してもう一度試す
             lastError != null -> retry()
             // 準備中：準備が終わったら再生を始める（今の VLC には前の曲が残っているので触らない）
-            preparing -> preparingPaused = false
+            preparing -> {
+                preparingPaused = false
+                publishNowPlaying()
+            }
             else -> player.play()
         }
     }
 
     fun pause() {
-        if (preparing) preparingPaused = true
+        if (preparing) {
+            preparingPaused = true
+            publishNowPlaying()
+        }
         player.pause()
     }
 
@@ -868,6 +884,7 @@ class PlaybackService : Service() {
         if (preparing) {
             // 準備が終わったら、この位置から始める
             preparingStart = ms.coerceIn(0, max)
+            publishNowPlaying()
             return
         }
         player.setTime(ms.coerceIn(0, max))
@@ -891,7 +908,10 @@ class PlaybackService : Service() {
         if (currentItem == null) return
         // 電話などで一時停止していた場合も、画面を離れたら勝手に再開しない
         pausedByFocus = false
-        if (preparing) preparingPaused = true
+        if (preparing) {
+            preparingPaused = true
+            publishNowPlaying()
+        }
         if (player.isPlaying) player.pause()
         savePosition()
         setVideoEnabled(false)
@@ -1457,6 +1477,8 @@ class PlaybackService : Service() {
                 if (lengthMs <= 0) setLength(player.length)
                 // A-B リピート：B を過ぎたら A に戻る
                 if (abA >= 0 && abB > abA && e.timeChanged >= abB) player.setTime(abA)
+                dispatch(e.timeChanged) { it.onPlayerEvent(e) }
+                return
             }
             MediaPlayer.Event.EndReached -> {
                 // 画面側にも伝えてから次へ進む

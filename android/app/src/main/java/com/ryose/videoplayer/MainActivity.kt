@@ -51,6 +51,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniPlay: ImageButton
     private lateinit var miniProgress: com.google.android.material.progressindicator.LinearProgressIndicator
     private var miniArtKey: String? = null
+    /** 最後に表示した「今再生しているもの」（再生位置は 0 にしたもの。位置のほかが変わったときだけ書き換える） */
+    private var miniShown: PlaybackService.NowPlaying? = null
 
     /** ミニプレイヤーの状態と操作（再生サービスの「今再生しているもの」を見る） */
     private lateinit var nowPlaying: NowPlayingViewModel
@@ -153,6 +155,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        nowPlaying.onScreenStart()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        nowPlaying.onScreenStop()
+    }
+
     override fun onResume() {
         super.onResume()
         maybeAskNotificationPermission()
@@ -177,17 +189,22 @@ class MainActivity : AppCompatActivity() {
         if (np == null) {
             miniPlayer.visibility = View.GONE
             miniArtKey = null
+            miniShown = null
             return
         }
+        // ミニプレイヤーの上の細いバー（再生位置）
+        val len = np.lengthMs
+        miniProgress.progress = if (len > 0) (np.positionMs * 1000 / len).toInt().coerceIn(0, 1000) else 0
+        // 曲名やボタンは、位置のほかが変わったときだけ書き換える（再生位置が進むたびに描き直さない）
+        val shown = np.copy(positionMs = 0)
+        if (shown == miniShown) return
+        miniShown = shown
         val item = np.item
         miniPlayer.visibility = View.VISIBLE
         miniTitle.text = np.title
         miniSubtitle.text = np.subtitle.ifEmpty { if (item.isAudio) "" else "動画" }
         miniSubtitle.visibility = if (miniSubtitle.text.isEmpty()) View.GONE else View.VISIBLE
         miniPlay.setImageResource(if (np.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-        // ミニプレイヤーの上の細いバー（再生位置）
-        val len = np.lengthMs
-        miniProgress.progress = if (len > 0) (np.positionMs * 1000 / len).toInt().coerceIn(0, 1000) else 0
         // 画像は曲が変わったときだけ読み込み直す
         val art = np.art
         val key = item.key + (if (art != null) "#art" else "")

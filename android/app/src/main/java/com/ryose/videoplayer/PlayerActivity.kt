@@ -646,6 +646,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun refreshAll() {
         val s = svc ?: return
+        // 見ていない間に変わったものがあっても、今の状態から出し直す（再生位置の表示も合わせる）
+        s.refreshNowPlaying()
         updateItem()
         val t = s.position
         seekBar.progress = t.toInt()
