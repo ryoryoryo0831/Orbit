@@ -32,7 +32,7 @@ import java.net.URL
  * 同じ鍵で署名してあるので上書きでき、お気に入りや設定は消えない。どの版にするかの判断は UpdateRules
  */
 object AppUpdater {
-    private const val LATEST_URL = "https://api.github.com/repos/ryoryoryo0831/video-player/releases/latest"
+    private const val LATEST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases/latest"
 
     /** 起動したとき：12 時間に 1 回まで確かめ、新しい版があれば知らせる（無ければ何も出さない） */
     fun checkOnStart(activity: AppCompatActivity) {

@@ -50,7 +50,7 @@
 ### 4-1. Orbit のファイルをダウンロードする
 
 1. iPhone の **Safari** で、iPhone 版のページを開きます。
-   - 最初の版：https://github.com/ryoryoryo0831/video-player/releases/tag/ios-build-2
+   - 最初の版：https://github.com/ryoryoryo0831/Orbit/releases/tag/ios-build-2
    - 新しい版が出たら、そのページのアドレスを別に伝えます。
 2. 少し下にある「**Assets**」の欄を開きます（閉じていたらタップ）。
 3. **Orbit-iOS-1.0.〇.ipa** をタップします。
