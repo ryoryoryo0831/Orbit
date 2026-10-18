@@ -145,7 +145,12 @@ class SettingsActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     val found = withContext(Dispatchers.IO) { runCatching { Backup.findInDownloads(ctx) }.getOrDefault(emptyList()) }
                     if (found.isEmpty()) {
-                        done("「ダウンロード」フォルダに、書き出したファイル（Orbit-backup-…）が見つかりませんでした。")
+                        done(
+                            "「ダウンロード」フォルダに、書き出したファイル（Orbit-backup-…）が見つかりませんでした。
+
+" +
+                                "入れ直したあとや、ほかの端末から持ってきたファイルは、「フォルダ」タブで「すべてのファイルへのアクセス」を許可すると見つけられます。",
+                        )
                         return@launch
                     }
                     ActionSheet.show(
@@ -167,19 +172,24 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun importFrom(uri: android.net.Uri) {
             val ctx = requireContext().applicationContext
-            lifecycleScope.launch {
+            // 再生中なら先に止める（読み込んだ中身の上に、再生サービスが古い続きの位置などを書かないように）
+            ctx.stopService(android.content.Intent(ctx, PlaybackService::class.java))
+            // 画面を回しても止まらないように、アプリ全体の流れで行う
+            Backup.scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     val text = Backup.readText(ctx, uri)
-                    if (text == null) Backup.Result(false, "ファイルを読めませんでした") else runCatching { Backup.import(ctx, text) }
-                        .getOrElse { Backup.Result(false, "読み込めませんでした（${it.message.orEmpty()}）") }
+                    if (text == null) Backup.Result(false, "ファイルを読めませんでした（大きすぎるか、読めない場所です）")
+                    else runCatching { Backup.import(ctx, text) }.getOrElse { Backup.Result(false, "読み込めませんでした（${it.message.orEmpty()}）") }
                 }
-                val activity = activity ?: return@launch
-                MaterialAlertDialogBuilder(activity)
-                    .setTitle(if (result.ok) "読み込みました" else "読み込めませんでした")
-                    .setMessage(result.message)
-                    .setCancelable(!result.ok)
-                    .setPositiveButton(if (result.ok) "起動し直す" else "閉じる") { _, _ -> if (result.ok) Backup.restartApp(activity) }
-                    .show()
+                if (result.ok) {
+                    // 古い中身を持ったまま動き続けて上書きしないように、すぐ起動し直す
+                    Backup.restartApp(ctx)
+                } else {
+                    val activity = activity ?: return@launch
+                    if (activity.isDestroyed) return@launch
+                    MaterialAlertDialogBuilder(activity).setTitle("読み込めませんでした").setMessage(result.message)
+                        .setPositiveButton("閉じる", null).show()
+                }
             }
         }
 

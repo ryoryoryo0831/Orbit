@@ -39,10 +39,17 @@ object AppUpdater {
         if (!AppSettings.updateCheckOnStart(activity)) return
         val now = System.currentTimeMillis()
         if (!UpdateRules.shouldCheck(AppSettings.updateCheckedAt(activity), now)) return
-        AppSettings.setUpdateCheckedAt(activity, now)
         activity.lifecycleScope.launch {
-            val update = runCatching { fetchLatest() }.getOrNull() ?: return@launch
-            if (UpdateRules.isNewer(update, currentVersionCode(activity)) && !activity.isFinishing) offer(activity, update)
+            val update = try {
+                fetchLatest()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 確かめられなかった（テレビの電源を入れた直後でまだつながっていない、など）：次に開いたときにまた確かめる
+                return@launch
+            }
+            AppSettings.setUpdateCheckedAt(activity, now)
+            if (update != null && UpdateRules.isNewer(update, currentVersionCode(activity)) && alive(activity)) offer(activity, update)
         }
     }
 
@@ -51,8 +58,14 @@ object AppUpdater {
         AppSettings.setUpdateCheckedAt(activity, System.currentTimeMillis())
         Toast.makeText(activity, "新しい版を確かめています…", Toast.LENGTH_SHORT).show()
         activity.lifecycleScope.launch {
-            val result = runCatching { fetchLatest() }
-            if (activity.isFinishing) return@launch
+            val result = try {
+                Result.success(fetchLatest())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            if (!alive(activity)) return@launch
             val update = result.getOrNull()
             when {
                 result.isFailure -> message(activity, "確かめられませんでした", "インターネットにつながっているか確かめてください。\n（${result.exceptionOrNull()?.message.orEmpty()}）")
@@ -62,6 +75,13 @@ object AppUpdater {
             }
         }
     }
+
+    /** ダイアログを出してよいか（閉じられた・作り直された画面には出さない） */
+    private fun alive(activity: AppCompatActivity) = !activity.isFinishing && !activity.isDestroyed
+
+    /** ダウンロード中（同じ APK を 2 つ同時にダウンロードしないように） */
+    @Volatile
+    private var downloading = false
 
     fun currentVersionCode(context: Context): Long =
         PackageInfoCompat.getLongVersionCode(context.packageManager.getPackageInfo(context.packageName, 0))
@@ -116,6 +136,10 @@ object AppUpdater {
     private fun apkFile(context: Context, update: UpdateRules.Update) = File(File(context.cacheDir, "update"), update.apkName)
 
     private fun download(activity: AppCompatActivity, update: UpdateRules.Update) {
+        if (downloading) {
+            Toast.makeText(activity, "ダウンロードしています。少し待ってください", Toast.LENGTH_SHORT).show()
+            return
+        }
         val file = apkFile(activity, update)
         // 前にダウンロードし終えていれば（許可を出しに行って戻ってきたときなど）、そのまま使う
         if (file.exists() && file.length() == update.apkSize) {
@@ -139,8 +163,9 @@ object AppUpdater {
             .setCancelable(false)
             .setNegativeButton("キャンセル") { _, _ -> job?.cancel() }
             .show()
+        downloading = true
         job = activity.lifecycleScope.launch {
-            val result = runCatching {
+            val error = try {
                 withContext(Dispatchers.IO) {
                     fetchApk(update, file) { percent ->
                         bar.post {
@@ -150,16 +175,23 @@ object AppUpdater {
                         }
                     }
                 }
+                null
+            } catch (e: CancellationException) {
+                // キャンセルを押した・画面が閉じられた（回したときなど）。ダイアログは画面と一緒に片付く
+                file.delete()
+                throw e
+            } catch (e: Exception) {
+                e
+            } finally {
+                downloading = false
             }
+            if (!alive(activity)) return@launch
             dialog.dismiss()
-            val error = result.exceptionOrNull()
-            when {
-                error is CancellationException -> file.delete()
-                error != null -> {
-                    file.delete()
-                    message(activity, "ダウンロードできませんでした", "インターネットにつながっているか確かめてください。\n（${error.message.orEmpty()}）")
-                }
-                else -> install(activity, file)
+            if (error != null) {
+                file.delete()
+                message(activity, "ダウンロードできませんでした", "インターネットにつながっているか確かめてください。\n（${error.message.orEmpty()}）")
+            } else {
+                install(activity, file)
             }
         }
     }

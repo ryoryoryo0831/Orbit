@@ -17,6 +17,8 @@ object PlaybackLogScreen {
     /** 画面に出す行の数（多すぎると開くのが遅い。コピー・共有はもっと多く） */
     private const val SHOW_LINES = 400
     private const val SEND_LINES = 1500
+    /** 共有は、ほかのアプリに渡せる大きさに限りがあるので少なめに */
+    private const val SHARE_LINES = 600
 
     fun summary(): String {
         val n = PlaybackLog.snapshot().size
@@ -38,7 +40,7 @@ object PlaybackLogScreen {
             listOf(
                 SheetItem(R.drawable.ic_info, "記録を見る", "新しい $SHOW_LINES 行") { showText(context) },
                 SheetItem(R.drawable.ic_info, "コピー", "新しい $SEND_LINES 行と、この端末の情報") { copy(context) },
-                SheetItem(R.drawable.ic_share, "共有", "メールやメッセージのアプリに渡します") { share(context) },
+                SheetItem(R.drawable.ic_share, "共有", "新しい $SHARE_LINES 行を、メールやメッセージのアプリに渡します") { share(context) },
                 SheetItem(R.drawable.ic_delete, "記録を消す") { confirmClear(context, onCleared) },
             ),
             subtitle = "記録は端末の中だけにあり、どこにも送りません。「共有」を押したときだけ、選んだアプリに渡します",
@@ -78,11 +80,14 @@ object PlaybackLogScreen {
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/plain")
             .putExtra(Intent.EXTRA_SUBJECT, "Orbit の再生の記録")
-            .putExtra(Intent.EXTRA_TEXT, text(context, SEND_LINES))
+            .putExtra(Intent.EXTRA_TEXT, text(context, SHARE_LINES))
         try {
             context.startActivity(Intent.createChooser(send, "記録を共有"))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(context, "共有できるアプリがありません。「コピー」をお使いください", Toast.LENGTH_LONG).show()
+        } catch (_: RuntimeException) {
+            // 大きすぎて渡せなかった（TransactionTooLargeException など）
+            Toast.makeText(context, "記録が大きすぎて渡せませんでした。「コピー」をお使いください", Toast.LENGTH_LONG).show()
         }
     }
 

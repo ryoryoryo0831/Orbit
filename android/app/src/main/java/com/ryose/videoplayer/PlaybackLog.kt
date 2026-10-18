@@ -51,9 +51,27 @@ object PlaybackLog {
         writer.execute {
             runCatching {
                 f.appendText(line + "\n")
-                if (f.length() > MAX_FILE_BYTES) f.writeText(snapshot(MAX_LINES).joinToString("\n", postfix = "\n"))
+                // 大きくなったら、ファイルの新しい半分だけを残す（毎回書き直さないように、上限よりずっと小さくする）
+                if (f.length() > MAX_FILE_BYTES) {
+                    val keep = f.readLines().takeLast(MAX_LINES / 2)
+                    f.writeText(keep.joinToString("\n", postfix = "\n"))
+                }
             }
         }
+    }
+
+    /** 直前に [addOnce] で足したもの */
+    private var lastOnce: String? = null
+
+    /**
+     * 直前と同じ内容なら足さない（1 秒ごとに見直す処理などで、うまくいかないときに同じ行が増え続けないように）
+     */
+    fun addOnce(message: String) {
+        synchronized(lines) {
+            if (message == lastOnce) return
+            lastOnce = message
+        }
+        add(message)
     }
 
     /** 新しい [max] 行（古い順） */

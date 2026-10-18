@@ -89,6 +89,7 @@ class DiscController(private val handler: Handler, private val host: Host) {
      */
     fun prepare(gen: Int, startInMenu: Boolean, startMs: Long, resumeTitle: Int? = null) {
         this.startMs = startMs
+        lastTitle = -1
         this.resumeTitle = resumeTitle
         if (startInMenu) {
             menuWatch = gen

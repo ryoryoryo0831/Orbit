@@ -23,20 +23,30 @@ import java.util.Locale
  * 同じ端末に読み込むときは、今あるパスワードを残す
  */
 object Backup {
+    /** 読み込みは画面を回しても止めないように、画面ではなくアプリの流れで行う */
+    val scope = kotlinx.coroutines.MainScope()
+
     private const val FORMAT = 1
     private const val DEFAULT_PREFS = "<settings>"
 
     /** 書き出す SharedPreferences（DEFAULT_PREFS は設定画面の設定） */
     private val PREFS = listOf(
         DEFAULT_PREFS, "favorites", "history", "servers", "urls", "player",
-        "resume", "resume_title", "ab_repeat", "track_choice",
+        "resume", "resume_title", "ab_repeat", "track_choice", "equalizer",
     )
 
     /** 書き出すファイル（files の中） */
     private val FILES = listOf("playlists.json")
 
     /** この端末だけの値（書き出さない・読み込まない） */
-    private val SKIP_KEYS = setOf("update_checked_at", "notification_permission_asked")
+    private val SKIP_KEYS = setOf(
+        "update_checked_at", "notification_permission_asked", "popup_permission_asked", "tv_hw_decode_restored",
+        // 自由な小窓の場所・大きさは画面の大きさで変わる（大きさの違う端末に移すと画面の外に出ることがある）
+        "popup_x", "popup_y", "popup_size",
+    )
+
+    /** 読み込むファイルの大きさの上限（ISO などを間違えて選んだときに、全部読もうとしないように） */
+    private const val MAX_BYTES = 20L * 1024 * 1024
 
     fun fileName(): String = "Orbit-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.JAPAN).format(Date()) + ".json"
 
@@ -167,10 +177,19 @@ object Backup {
         return "ダウンロード/Orbit/$name"
     }
 
-    /** 「ダウンロード」にある書き出したファイル（新しい順。名前と場所） */
+    /**
+     * 「ダウンロード」にある書き出したファイル（新しい順。名前と場所）。
+     * Android 11 以降、MediaStore で見えるのはこのアプリが書いたものだけ（入れ直すと見えなくなる）なので、
+     * 「すべてのファイルへのアクセス」が許可されていれば、フォルダを直接も探す
+     */
     fun findInDownloads(context: Context): List<Pair<String, Uri>> {
         if (Build.VERSION.SDK_INT < 29) return emptyList()
         val found = mutableListOf<Pair<String, Uri>>()
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val direct = listOf(File(dir, "Orbit"), dir).flatMap { d ->
+            d.listFiles { f -> f.isFile && f.name.startsWith("Orbit-backup-") && f.canRead() }?.toList().orEmpty()
+        }.sortedByDescending { it.lastModified() }
+        direct.forEach { found += it.name to Uri.fromFile(it) }
         context.contentResolver.query(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME),
@@ -178,19 +197,45 @@ object Backup {
             "${MediaStore.Downloads.DATE_ADDED} DESC",
         )?.use { c ->
             while (c.moveToNext()) {
-                found += c.getString(1) to android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, c.getLong(0))
+                val name = c.getString(1)
+                if (found.none { it.first == name }) {
+                    found += name to android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, c.getLong(0))
+                }
             }
         }
         return found
     }
 
-    fun readText(context: Context, uri: Uri): String? =
-        runCatching { context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } }.getOrNull()
+    /** 読む。大きすぎる（[MAX_BYTES] を超える）・読めないときは null */
+    fun readText(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val bytes = input.readNBytesCompat(MAX_BYTES + 1)
+            if (bytes.size > MAX_BYTES) null else String(bytes, Charsets.UTF_8)
+        }
+    }.getOrNull()
 
-    fun writeText(context: Context, uri: Uri, text: String): Boolean =
-        runCatching { context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray()) } != null }.getOrDefault(false)
+    private fun java.io.InputStream.readNBytesCompat(limit: Long): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (out.size() <= limit) {
+            val n = read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
 
-    /** 読み込んだあと、アプリを起動し直す（覚えている中身を読み直すため） */
+    fun writeText(context: Context, uri: Uri, text: String): Boolean {
+        val bytes = text.toByteArray()
+        // "wt"（中身を消して書く）に対応していない保存先もあるので、だめなら "w" で
+        for (mode in listOf("wt", "w")) {
+            val ok = runCatching { context.contentResolver.openOutputStream(uri, mode)?.use { it.write(bytes) } != null }.getOrDefault(false)
+            if (ok) return true
+        }
+        return false
+    }
+
+    /** 読み込んだあと、アプリを起動し直す（覚えている中身を読み直すため。新しいプロセスで最初の画面から開く） */
     fun restartApp(context: Context) {
         context.stopService(Intent(context, PlaybackService::class.java))
         val intent = Intent(context, MainActivity::class.java)
