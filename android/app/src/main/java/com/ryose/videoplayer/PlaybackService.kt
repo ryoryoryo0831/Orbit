@@ -338,7 +338,9 @@ class PlaybackService : Service() {
             override val timeMs: Long get() = player.time.coerceAtLeast(0)
             override val lengthMs: Long get() = this@PlaybackService.lengthMs
             override val itemKey: String? get() = currentItem?.key
-            override fun seek(ms: Long) = player.setTime(ms)
+            override fun seek(ms: Long) {
+                player.setTime(ms)
+            }
             override fun onChanged() = dispatch { it.onModesChanged() }
         })
         history = HistoryStore(this)
