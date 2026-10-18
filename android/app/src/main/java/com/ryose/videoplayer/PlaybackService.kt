@@ -665,7 +665,7 @@ class PlaybackService : Service() {
         // 前回の続きを読み込み直すときは、並べ替えた順番もそのまま戻す
         if (presetOrder != null && presetOrder.size == newItems.size) {
             order = presetOrder
-            orderPos = order.indexOf(index).coerceAtLeast(0)
+            orderPos = QueueRules.positionOf(order, index)
         }
         ensureEngineUpToDate()
         // 画面から切り離されても動き続けるように「開始済み」のサービスにしておく
@@ -987,11 +987,11 @@ class PlaybackService : Service() {
         stopSelf()
     }
 
-    // ---------- 再生順（シャッフル・リピート） ----------
+    // ---------- 再生順（シャッフル・リピート）。決め方は QueueRules（テストできる部分） ----------
 
     private fun buildOrder() {
-        order = if (shuffle) listOf(index) + (items.indices - index).shuffled() else items.indices.toList()
-        orderPos = order.indexOf(index).coerceAtLeast(0)
+        order = QueueRules.buildOrder(items.size, index, shuffle)
+        orderPos = QueueRules.positionOf(order, index)
     }
 
     fun playAt(pos: Int) {
@@ -1011,8 +1011,7 @@ class PlaybackService : Service() {
         autoAdvance = true
         val start = items.size
         items = items + added
-        val newIdx = added.indices.map { start + it }
-        order = if (next) order.take(orderPos + 1) + newIdx + order.drop(orderPos + 1) else order + newIdx
+        order = QueueRules.enqueue(order, orderPos, start, added.size, next)
         queueChanged()
     }
 
@@ -1021,7 +1020,7 @@ class PlaybackService : Service() {
         if (pos !in order.indices || pos == orderPos) return
         val removed = order[pos]
         items = items.filterIndexed { i, _ -> i != removed }
-        order = order.filterIndexed { p, _ -> p != pos }.map { if (it > removed) it - 1 else it }
+        order = QueueRules.remove(order, pos)
         if (index > removed) index--
         queueChanged()
     }
@@ -1029,37 +1028,27 @@ class PlaybackService : Service() {
     /** 再生キューの順番を入れ替える */
     fun moveInQueue(from: Int, to: Int) {
         if (from !in order.indices || to !in order.indices || from == to) return
-        order = order.toMutableList().apply { add(to, removeAt(from)) }
+        order = QueueRules.move(order, from, to)
         queueChanged()
     }
 
     private fun queueChanged() {
-        orderPos = order.indexOf(index).coerceAtLeast(0)
+        orderPos = QueueRules.positionOf(order, index)
         LastSession.save(this, items, index, shuffle, order, autoAdvance)
         dispatch { it.onModesChanged() }
     }
 
-    fun hasNext() = orderPos < order.lastIndex || (repeat == Repeat.ALL && items.size > 1)
+    fun hasNext() = QueueRules.hasNext(order, orderPos, repeat, items.size)
 
     fun next() {
-        when {
-            orderPos < order.lastIndex -> playAt(orderPos + 1)
-            repeat == Repeat.ALL && items.isNotEmpty() -> {
-                // 最後まで来たら最初から（シャッフル中は並べ直す。今の曲がまた最初に来て 2 回続かないように）
-                if (shuffle) order = items.indices.shuffled().let { o ->
-                    if (o.size > 1 && o.first() == index) o.drop(1) + o.first() else o
-                }
-                playAt(0)
-            }
-        }
+        val step = QueueRules.next(order, orderPos, index, items.size, repeat, shuffle) ?: return
+        order = step.order
+        playAt(step.orderPos)
     }
 
     fun previous() {
-        when {
-            player.time > 3000 || (orderPos == 0 && repeat != Repeat.ALL) -> seekTo(0)
-            orderPos > 0 -> playAt(orderPos - 1)
-            else -> playAt(order.lastIndex)
-        }
+        val pos = QueueRules.previous(order, orderPos, player.time, repeat)
+        if (pos == null) seekTo(0) else playAt(pos)
     }
 
     fun toggleShuffle() {
@@ -1114,11 +1103,10 @@ class PlaybackService : Service() {
             stopPlayback()
             return
         }
-        val item = currentItem
-        when {
-            repeat == Repeat.ONE -> playCurrent(0, false)
-            hasNext() && (autoAdvance || item?.isAudio == true) -> next()
-            else -> stopPlayback()
+        when (QueueRules.onEnded(repeat, hasNext(), autoAdvance, currentItem?.isAudio == true)) {
+            QueueRules.EndAction.REPEAT_ONE -> playCurrent(0, false)
+            QueueRules.EndAction.NEXT -> next()
+            QueueRules.EndAction.STOP -> stopPlayback()
         }
     }
 
@@ -1434,7 +1422,7 @@ class PlaybackService : Service() {
             if (gen != playGeneration || currentItem != item) return@post
             val title = item?.title.orEmpty()
             // 終わったら止まる設定のときは、関係ない次の動画へ飛ばない
-            if (hasNext() && errorStreak < items.size && (autoAdvance || item?.isAudio == true)) {
+            if (QueueRules.skipOnError(hasNext(), errorStreak, items.size, autoAdvance, item?.isAudio == true)) {
                 Toast.makeText(this, "再生できなかったため、次へ進みます：$title", Toast.LENGTH_SHORT).show()
                 next()
                 return@post
