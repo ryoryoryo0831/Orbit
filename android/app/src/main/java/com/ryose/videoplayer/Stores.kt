@@ -6,6 +6,10 @@ import org.json.JSONArray
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * 再生履歴（新しい順、最大 200 件）。
@@ -32,6 +36,7 @@ class HistoryStore(context: Context) {
 
     private fun save(list: List<Entry>) {
         cache = list
+        _changes.update { it + 1 }
         val arr = JSONArray()
         list.forEach { arr.put(it.item.toJson().put("playedAt", it.playedAt)) }
         prefs.edit { putString(KEY, arr.toString()) }
@@ -69,11 +74,14 @@ class HistoryStore(context: Context) {
         save((list + entries.filter { it.item.key !in keys }).sortedByDescending { it.playedAt }.take(MAX))
     }
 
-    private companion object {
-        const val KEY = "entries"
-        const val MAX = 200
-        val lock = Any()
-        var cache: List<Entry>? = null
+    companion object {
+        private const val KEY = "entries"
+        private const val MAX = 200
+        private val lock = Any()
+        private var cache: List<Entry>? = null
+        private val _changes = MutableStateFlow(0)
+        /** 履歴が変わるたびに増える番号（再生サービス・画面のどこで変えても。ViewModel が見張って一覧を作り直す） */
+        val changes: StateFlow<Int> = _changes.asStateFlow()
     }
 }
 
@@ -115,6 +123,7 @@ class PlaylistStore(context: Context) {
 
     private fun save(list: List<SavedPlaylist>) {
         cache = list
+        _changes.update { it + 1 }
         // ファイルの中身（JSON）を作るのも裏で行う（曲の多いプレイリストでは、お気に入りの切り替えなどで画面が止まっていた）。
         // list は書き換えない一覧なので、裏で読んでも大丈夫。書き込みは 1 本ずつ順番に行うので、古い中身で上書きすることもない
         writer.execute {
@@ -190,10 +199,13 @@ class PlaylistStore(context: Context) {
         })
     }
 
-    private companion object {
-        val lock = Any()
-        var cache: List<SavedPlaylist>? = null
+    companion object {
+        private val lock = Any()
+        private var cache: List<SavedPlaylist>? = null
         /** ファイルへの書き込みは 1 本ずつ順番に */
-        val writer = Executors.newSingleThreadExecutor()
+        private val writer = Executors.newSingleThreadExecutor()
+        private val _changes = MutableStateFlow(0)
+        /** プレイリスト（お気に入りも）が変わるたびに増える番号（どこで変えても。ViewModel が見張って一覧を作り直す） */
+        val changes: StateFlow<Int> = _changes.asStateFlow()
     }
 }

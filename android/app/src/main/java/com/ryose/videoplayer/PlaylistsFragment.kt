@@ -4,46 +4,40 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
-/** 「プレイリスト」タブ */
+/** 「プレイリスト」タブ。状態と操作は PlaylistsViewModel にあり、ここは表示するだけ */
 class PlaylistsFragment : BaseListFragment() {
 
-    private lateinit var store: PlaylistStore
+    private lateinit var vm: PlaylistsViewModel
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        vm = ViewModelProvider(this)[PlaylistsViewModel::class.java]
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        store = PlaylistStore(requireContext())
         fab.visibility = View.VISIBLE
         fab.setOnClickListener {
-            PlaylistDialogs.promptName(requireContext(), getString(R.string.new_playlist), "") { name ->
-                store.create(name)
-                load()
-            }
+            PlaylistDialogs.promptName(requireContext(), getString(R.string.new_playlist), "") { name -> vm.create(name) }
         }
         // 右下のボタンで最後の行が隠れないように
         list.updatePadding(bottom = (88 * resources.displayMetrics.density).toInt())
-    }
 
-    override fun onResume() {
-        super.onResume()
-        load()
-    }
-
-    private fun load() {
-        // お気に入りはいつも一番上に
-        val lists = store.all().sortedBy { if (it.id == FavoriteMedia.PLAYLIST_ID) 0 else 1 }
-        val rows = lists.map { p ->
-            val total = p.items.sumOf { it.durationMs }
-            // 全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」で数える
-            val unit = when {
-                p.items.isNotEmpty() && p.items.all { it.isAudio } -> "曲"
-                p.items.none { it.isAudio } -> "本"
-                else -> "件"
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect(::render)
             }
-            val info = "${p.items.size} $unit" + if (total > 0) " · ${formatTime(total)}" else ""
-            val icon = if (p.id == FavoriteMedia.PLAYLIST_ID) R.drawable.ic_star else R.drawable.ic_playlist
-            Row.Folder(p.name, info, icon, id = p.id)
         }
+    }
+
+    private fun render(s: ListUiState) {
+        val rows = s.rows ?: return
         showRows(
             rows,
             "プレイリストはまだありません。\n\n右下の＋で作るか、動画を長押しして\n「プレイリストに追加」から作れます。",
@@ -58,7 +52,7 @@ class PlaylistsFragment : BaseListFragment() {
 
     override fun extraActions(row: Row): List<SheetItem> {
         val id = (row as? Row.Folder)?.id ?: return emptyList()
-        val p = store.get(id) ?: return emptyList()
+        val p = vm.get(id) ?: return emptyList()
         val play = listOf(
             SheetItem(R.drawable.ic_play, "再生") { if (p.items.isNotEmpty()) requireActivity().playItems(p.items, 0) },
             SheetItem(R.drawable.ic_shuffle, "シャッフル再生") {
@@ -69,20 +63,12 @@ class PlaylistsFragment : BaseListFragment() {
         if (id == FavoriteMedia.PLAYLIST_ID) return play
         return play + listOf(
             SheetItem(R.drawable.ic_edit, "名前を変更") {
-                PlaylistDialogs.promptName(requireContext(), "名前を変更", p.name) { name ->
-                    store.rename(id, name)
-                    load()
-                }
+                PlaylistDialogs.promptName(requireContext(), "名前を変更", p.name) { name -> vm.rename(id, name) }
             },
             SheetItem(R.drawable.ic_delete, "削除") {
                 PlaylistDialogs.confirm(requireContext(), "「${p.name}」を削除しますか？\n（動画ファイルは削除されません）", "削除") {
-                    val index = store.all().indexOfFirst { it.id == id }
-                    store.delete(id)
-                    load()
-                    requireActivity().showUndo("「${p.name}」を削除しました") {
-                        store.restore(p, index)
-                        if (view != null) load()
-                    }
+                    val (deleted, index) = vm.delete(id) ?: return@confirm
+                    requireActivity().showUndo("「${p.name}」を削除しました") { vm.restore(deleted, index) }
                 }
             },
         )

@@ -1,27 +1,29 @@
 package com.ryose.videoplayer
 
 import android.os.Bundle
-import android.text.format.DateUtils
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
-/** 「履歴」タブ：最近再生した動画 */
+/** 「履歴」タブ：最近再生した動画。状態と操作は HistoryViewModel にあり、ここは表示するだけ */
 class HistoryFragment : BaseListFragment() {
 
-    private lateinit var history: HistoryStore
+    private lateinit var vm: HistoryViewModel
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        vm = ViewModelProvider(this)[HistoryViewModel::class.java]
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        history = HistoryStore(requireContext())
         requireActivity().addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                 menuInflater.inflate(R.menu.history_menu, menu)
@@ -30,41 +32,33 @@ class HistoryFragment : BaseListFragment() {
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
                 if (menuItem.itemId != R.id.action_clear_history) return false
                 PlaylistDialogs.confirm(requireContext(), "再生履歴をすべて削除しますか？", "削除") {
-                    val before = history.all()
-                    history.clear()
-                    load()
-                    requireActivity().showUndo("再生履歴を削除しました") {
-                        history.restore(before)
-                        // ここの view は onViewCreated の引数なので、画面がまだあるかは Fragment の view で確かめる
-                        if (this@HistoryFragment.view != null) load()
-                    }
+                    val before = vm.clearAll()
+                    requireActivity().showUndo("再生履歴を削除しました") { vm.restore(before) }
                 }
                 return true
             }
         }, viewLifecycleOwner, Lifecycle.State.RESUMED)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect(::render)
+            }
+        }
+    }
+
+    private fun render(s: ListUiState) {
+        val rows = s.rows ?: return
+        showRows(rows, "再生した動画がここに表示されます。", R.drawable.ic_history)
     }
 
     override fun onResume() {
         super.onResume()
-        load()
+        // 「5 分前」などを今の時刻で作り直す
+        vm.refresh()
     }
 
-    override fun onFilesChanged() = load()
-
-    private fun load() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val rows = withContext(Dispatchers.IO) {
-                val now = System.currentTimeMillis()
-                // 以前のバージョンで記録された音楽は出さない
-                history.all().filterNot { it.item.isAudio }.map { e ->
-                    val ago = DateUtils.getRelativeTimeSpanString(e.playedAt, now, DateUtils.MINUTE_IN_MILLIS)
-                    val folder = e.item.path?.let { File(it).parentFile?.name }
-                    Row.Media(e.item, listOfNotNull(ago.toString(), folder).joinToString(" · "))
-                }
-            }
-            showRows(rows, "再生した動画がここに表示されます。", R.drawable.ic_history)
-        }
-    }
+    // 履歴の一覧は HistoryStore が変わると作り直されるので、名前の変更・削除のあとに何もしなくてよい
+    override fun onFilesChanged() {}
 
     /** 履歴はその動画だけを再生する */
     override fun onRowClick(position: Int) {
@@ -75,13 +69,8 @@ class HistoryFragment : BaseListFragment() {
     override fun extraActions(row: Row): List<SheetItem> {
         if (row !is Row.Media) return emptyList()
         return listOf(SheetItem(R.drawable.ic_history, "履歴から削除") {
-            val removed = history.all().filter { it.item.key == row.item.key }
-            history.remove(row.item.key)
-            load()
-            requireActivity().showUndo("履歴から削除しました") {
-                history.restore(removed)
-                if (view != null) load()
-            }
+            val removed = vm.remove(row.item.key)
+            requireActivity().showUndo("履歴から削除しました") { vm.restore(removed) }
         })
     }
 }
