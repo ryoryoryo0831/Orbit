@@ -961,6 +961,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /** ︙の「DVD メニュー」：メニューを開いて十字キーを出す */
     private fun openDvdMenu() {
+        if (svc == null) return
         if (!dvdPad.openMenu()) {
             showInfo("この DVD にはメニューがありません")
             return

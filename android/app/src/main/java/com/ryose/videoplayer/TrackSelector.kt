@@ -59,8 +59,11 @@ class TrackSelector(private val handler: Handler, private val host: Host) {
     /** 字幕はあとから増える（隣の字幕ファイル・DVD の本編に移ったとき）ので、そのたびに見直す */
     private fun apply() {
         val key = host.trackTarget() ?: return
+        // 音声トラックがまだ無い（VLC の一覧にはいつも「オフ」があるので、空なら分かっていない）ときは選ばない
+        val audio = host.audioTracks()
+        if (audio.isEmpty()) return
         val choice = TrackRules.decide(
-            audio = host.audioTracks().map { TrackRules.Track(it.id, it.name) },
+            audio = audio.map { TrackRules.Track(it.id, it.name) },
             currentAudio = host.audioTrack,
             spu = host.spuTracks().map { TrackRules.Track(it.id, it.name) },
             currentSpu = host.spuTrack,
