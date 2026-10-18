@@ -13,6 +13,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -204,7 +205,7 @@ class ActionSheet private constructor(
                 isClickable = false
             }
             val menu = item.menu
-            more.visibility = if (menu != null) View.VISIBLE else View.GONE
+            more.isVisible = menu != null
             more.contentDescription = "${item.label}のメニュー"
             more.setOnClickListener { menu?.invoke() }
             if (menu != null) {

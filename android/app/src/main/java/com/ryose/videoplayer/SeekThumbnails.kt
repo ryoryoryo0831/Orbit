@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.os.Build
+import androidx.core.graphics.scale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
@@ -94,7 +95,7 @@ class SeekThumbnails(private val context: Context) {
     private fun scaleDown(b: Bitmap, maxW: Int, maxH: Int): Bitmap {
         val ratio = minOf(maxW.toFloat() / b.width, maxH.toFloat() / b.height, 1f)
         if (ratio >= 1f) return b
-        val scaled = Bitmap.createScaledBitmap(b, (b.width * ratio).toInt().coerceAtLeast(1), (b.height * ratio).toInt().coerceAtLeast(1), true)
+        val scaled = b.scale((b.width * ratio).toInt().coerceAtLeast(1), (b.height * ratio).toInt().coerceAtLeast(1))
         if (scaled != b) b.recycle()
         return scaled
     }

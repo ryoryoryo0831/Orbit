@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -84,7 +85,7 @@ class PlaylistActivity : AppCompatActivity() {
         }
         supportActionBar?.subtitle = "${p.items.size} $unit"
         adapter.rows = p.items.map { Row.Media(it, it.path?.let { path -> File(path).parentFile?.name }.orEmpty()) }
-        emptyText.visibility = if (p.items.isEmpty()) View.VISIBLE else View.GONE
+        emptyText.isVisible = p.items.isEmpty()
         if (playlistId == FavoriteMedia.PLAYLIST_ID) {
             emptyText.text = "お気に入りはまだありません。\n\n動画や曲を長押しして\n「お気に入りに追加」を選ぶと、ここに入ります。"
         }

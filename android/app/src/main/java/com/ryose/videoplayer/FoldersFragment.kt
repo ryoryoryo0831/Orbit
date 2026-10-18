@@ -13,7 +13,9 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.core.net.toUri
 import androidx.core.view.MenuProvider
+import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +47,7 @@ class FoldersFragment : BaseListFragment() {
             fun parse(s: String): Loc? = when {
                 s.startsWith("L|") -> Local(File(s.removePrefix("L|")))
                 s.startsWith("N|") -> s.removePrefix("N|").split("|", limit = 2)
-                    .takeIf { it.size == 2 }?.let { Net(Uri.parse(it[0]), it[1]) }
+                    .takeIf { it.size == 2 }?.let { Net(it[0].toUri(), it[1]) }
                 else -> null
             }
         }
@@ -571,7 +573,7 @@ class FoldersFragment : BaseListFragment() {
                     id == ACTION_OPEN_URL -> NetworkDialogs.openUrl(requireActivity())
                     id != null && id.startsWith("server:") -> ServerStore(requireContext()).get(id.removePrefix("server:"))
                         ?.let { push(Loc.Net(it.uri, it.name)) }
-                    id != null && id.startsWith("net:") -> push(Loc.Net(Uri.parse(id.removePrefix("net:")), row.name))
+                    id != null && id.startsWith("net:") -> push(Loc.Net(id.removePrefix("net:").toUri(), row.name))
                     id != null && id.startsWith("fav:") -> FavoriteFolders(requireContext()).all()
                         .find { it.uri.toString() == id.removePrefix("fav:") }?.let { openFavorite(it) }
                 }
@@ -603,7 +605,7 @@ class FoldersFragment : BaseListFragment() {
                 add(favoriteItem(Uri.fromFile(dir), row.name))
             }
             id != null && id.startsWith("fav:") -> {
-                val uri = Uri.parse(id.removePrefix("fav:"))
+                val uri = id.removePrefix("fav:").toUri()
                 // ここから再生もできる（端末内のフォルダも、ネットワークの場所も）
                 val localDir = uri.takeIf { it.scheme == "file" }?.path?.let { File(it) }?.takeIf { it.isDirectory }
                 val play = when {
@@ -636,7 +638,7 @@ class FoldersFragment : BaseListFragment() {
                 )
             }
             id != null && id.startsWith("net:") -> buildList {
-                val uri = Uri.parse(id.removePrefix("net:"))
+                val uri = id.removePrefix("net:").toUri()
                 addAll(playNetItems(uri, row.name))
                 add(favoriteItem(uri, row.name))
                 // 見つかった共有フォルダを、ログイン情報付きで登録する

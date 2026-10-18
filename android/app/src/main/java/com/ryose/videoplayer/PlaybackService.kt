@@ -32,6 +32,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -993,7 +994,7 @@ class PlaybackService : Service() {
 
     fun cycleRepeat() {
         repeat = Repeat.entries[(repeat.ordinal + 1) % Repeat.entries.size]
-        prefs().edit().putString("repeat", repeat.name).apply()
+        prefs().edit { putString("repeat", repeat.name) }
         dispatch { it.onModesChanged() }
     }
 

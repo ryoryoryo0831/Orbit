@@ -11,6 +11,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -60,7 +62,7 @@ data class PlaylistItem(
 
     companion object {
         fun fromJson(o: JSONObject) = PlaylistItem(
-            uri = Uri.parse(o.getString("uri")),
+            uri = o.getString("uri").toUri(),
             title = o.optString("title", "動画"),
             path = if (o.isNull("path")) null else o.getString("path"),
             durationMs = o.optLong("duration"),
@@ -171,11 +173,11 @@ class ResumeStore(private val context: Context) {
         if (durationMs <= 0) return
         // 冒頭や最後まで見た場合は記憶しない
         if (positionMs < 3_000 || positionMs > durationMs - 5_000) clear(key)
-        else prefs.edit().putLong(key, positionMs).apply()
+        else prefs.edit { putLong(key, positionMs) }
     }
 
     fun clear(key: String) {
-        prefs.edit().remove(key).apply()
+        prefs.edit { remove(key) }
     }
 
     /** SDカードが抜かれているだけの場合は消さないように、そのストレージ自体が読めるか確かめる */
@@ -193,21 +195,19 @@ class ResumeStore(private val context: Context) {
         val now = System.currentTimeMillis()
         if (now - meta.getLong("pruned_at", 0) < 24 * 60 * 60 * 1000L) return
         val gone = prefs.all.keys.filter { it.startsWith("/") && !File(it).exists() && volumeAvailable(it) }
-        if (gone.isNotEmpty()) {
-            val editor = prefs.edit()
-            gone.forEach { editor.remove(it) }
-            editor.apply()
-        }
-        meta.edit().putLong("pruned_at", now).apply()
+        if (gone.isNotEmpty()) prefs.edit { gone.forEach { remove(it) } }
+        meta.edit { putLong("pruned_at", now) }
     }
 
     /** 旧バージョンのキー（content:// の Uri）で保存された位置を、新しいキー（ファイルパス）へ移す */
     fun migrate(from: String, to: String) {
         if (from == to || !prefs.contains(from)) return
         val pos = prefs.getLong(from, 0L)
-        val editor = prefs.edit().remove(from)
-        if (!prefs.contains(to)) editor.putLong(to, pos)
-        editor.apply()
+        val keepNew = prefs.contains(to)
+        prefs.edit {
+            remove(from)
+            if (!keepNew) putLong(to, pos)
+        }
     }
 }
 

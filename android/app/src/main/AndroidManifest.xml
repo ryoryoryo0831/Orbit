@@ -29,6 +29,10 @@
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
+    <!-- 有線 LAN だけのテレビでも入れられるように（Wi-Fi の許可は Wi-Fi があるときの省電力対策に使うだけ） -->
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
 
     <!-- 自由な小窓（ほかのアプリの上に重ねて表示する小窓） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -39,7 +43,14 @@
     <!-- 再生中の通知（Android 13 以降は許可が必要。断られても再生はできる） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      tools:targetApi="33"：予測型の戻る（enableOnBackInvokedCallback）は Android 13 以降だけで効く（古い端末では無視される）。
+      PictureInPictureIssue：画面を離れたときの動き（自由な小窓・OS の小窓・音声だけ・止める）は設定で選べるので、
+      OS の小窓に自動で入る setAutoEnterEnabled は使わない
+    -->
     <application
+        tools:targetApi="33"
+        tools:ignore="PictureInPictureIssue"
         android:name=".App"
         android:banner="@drawable/tv_banner"
         android:dataExtractionRules="@xml/data_extraction_rules"

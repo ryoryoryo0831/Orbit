@@ -38,11 +38,15 @@ import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.toColorInt
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnPreDraw
+import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
@@ -294,7 +298,7 @@ class PlayerActivity : AppCompatActivity() {
         run {
             // 操作パネルと一緒に出すシステムのバーは、映像の上に透明で重ねる
             window.statusBarColor = Color.TRANSPARENT
-            window.navigationBarColor = Color.parseColor("#66000000")
+            window.navigationBarColor = "#66000000".toColorInt()
         }
         updateSystemBars()
 
@@ -611,7 +615,7 @@ class PlayerActivity : AppCompatActivity() {
     // ---------- 読み込み中・再生エラーの表示 ----------
 
     private fun scheduleLoading() {
-        if (loadingScheduled || loadingView.visibility == View.VISIBLE || inPip || errorPanel.visibility == View.VISIBLE) return
+        if (loadingScheduled || loadingView.isVisible || inPip || errorPanel.isVisible) return
         loadingScheduled = true
         handler.postDelayed(showLoadingTask, LOADING_DELAY_MS)
     }
@@ -703,7 +707,7 @@ class PlayerActivity : AppCompatActivity() {
         abBar.refresh()
         val cast = s.renderer
         castButton.setImageResource(if (cast != null) R.drawable.ic_cast_connected else R.drawable.ic_cast)
-        castInfo.visibility = if (cast != null) View.VISIBLE else View.GONE
+        castInfo.isVisible = cast != null
         castInfo.text = cast?.let { "${it.displayName ?: it.name} で再生中" }
         updatePipParams()
     }
@@ -1000,7 +1004,7 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         try {
-            val bitmap = android.graphics.Bitmap.createBitmap(surface.width, surface.height, android.graphics.Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(surface.width, surface.height)
             android.view.PixelCopy.request(surface, bitmap, { result ->
                 if (result != android.view.PixelCopy.SUCCESS) {
                     showInfo("スクリーンショットを撮れませんでした")
@@ -1063,14 +1067,14 @@ class PlayerActivity : AppCompatActivity() {
      * onKeyDown より先に受け取る（決定キーは、選ばれている画面全体の touchLayer が先に「クリック」として取ってしまうため）
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (errorPanel.visibility != View.VISIBLE && dvdPad.dispatchKey(event)) return true
+        if (!errorPanel.isVisible && dvdPad.dispatchKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
         val s0 = svc
         // エラーの表示中は、十字キーで「再試行」「閉じる」を選べるようにする（シークや操作パネルに取られない）
-        if (errorPanel.visibility == View.VISIBLE && keyCode in DPAD_KEYS) return super.onKeyDown(keyCode, event)
+        if (errorPanel.isVisible && keyCode in DPAD_KEYS) return super.onKeyDown(keyCode, event)
         if (s0 != null && !locked) {
             when (keyCode) {
                 android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_SPACE -> {
@@ -1196,7 +1200,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun startSeekPreview(progress: Int) {
         previewImages = thumbs.supports(svc?.currentItem)
         seekPreviewImage.setImageDrawable(null)
-        seekPreviewImage.visibility = if (previewImages) View.VISIBLE else View.GONE
+        seekPreviewImage.isVisible = previewImages
         seekPreview.visibility = View.VISIBLE
         updateSeekPreview(progress)
         if (previewImages) previewTarget.value = progress.toLong()
@@ -1320,7 +1324,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showControls(autoHide: Boolean = true) {
         // 再生エラーの表示中は、その上に操作パネルを重ねない
-        if (locked || inPip || errorPanel.visibility == View.VISIBLE) return
+        if (locked || inPip || errorPanel.isVisible) return
         topBar.fadeIn()
         bottomBar.fadeIn()
         centerControls.fadeIn()
@@ -1416,7 +1420,7 @@ class PlayerActivity : AppCompatActivity() {
      * ボタンが消えたら真ん中に戻す
      */
     private fun placeInfo(animate: Boolean) {
-        if (gestureInfo.visibility != View.VISIBLE) {
+        if (!gestureInfo.isVisible) {
             gestureInfo.translationY = 0f
             return
         }
@@ -1560,7 +1564,7 @@ class PlayerActivity : AppCompatActivity() {
             )
             .setPositiveButton("設定を開く") { _, _ ->
                 runCatching {
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
                 }
             }
             .apply { if (hasPip) setNeutralButton("いつもの小窓を使う") { _, _ -> enterPip() } }
@@ -1741,6 +1745,8 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // 端末の明るさの最大値は Android の内部の値なので、R.integer では指せず名前で探すしかない
+    @android.annotation.SuppressLint("DiscouragedApi")
     private fun currentBrightness(): Float {
         val b = window.attributes.screenBrightness
         if (b >= 0) return b

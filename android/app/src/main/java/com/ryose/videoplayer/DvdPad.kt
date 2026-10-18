@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import org.videolan.libvlc.MediaPlayer
 
@@ -33,7 +34,7 @@ class DvdPad(
         }
     }
 
-    val isShowing: Boolean get() = pad.visibility == View.VISIBLE
+    val isShowing: Boolean get() = pad.isVisible
 
     init {
         fun nav(id: Int, direction: Int) = pad.findViewById<View>(id).setOnClickListener { send(direction) }
@@ -71,7 +72,7 @@ class DvdPad(
     fun update() {
         val inMenu = service()?.isInDiscMenu() == true
         if (!inMenu) dismissed = false
-        pad.visibility = if (inMenu && !dismissed && !blocked()) View.VISIBLE else View.GONE
+        pad.isVisible = inMenu && !dismissed && !blocked()
     }
 
     /** ︙の「DVD メニュー」：メニューを開いて十字キーを出す。メニューが無ければ false */

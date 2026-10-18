@@ -19,6 +19,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ProgressBar
+import androidx.core.view.isVisible
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IVLCVout
 import kotlin.math.abs
@@ -112,6 +113,8 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     val isShowing: Boolean get() = root != null
 
     /** 小窓を出す。許可が無いなどで出せなければ false */
+    // 小窓は WindowManager に直接置くので、組み立てるときの親（root）が無い
+    @android.annotation.SuppressLint("InflateParams")
     fun show(): Boolean {
         if (root != null) return true
         if (!Settings.canDrawOverlays(service)) return false
@@ -298,11 +301,11 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private fun updateButtons() {
         if (root == null) return
         val count = PopupGeometry.buttonCount(params.width / density, params.height / density)
-        playButton.visibility = if (count >= 1) View.VISIBLE else View.GONE
-        rewindButton.visibility = if (count >= 3) View.VISIBLE else View.GONE
-        forwardButton.visibility = if (count >= 3) View.VISIBLE else View.GONE
-        prevButton.visibility = if (count >= 5) View.VISIBLE else View.GONE
-        nextButton.visibility = if (count >= 5) View.VISIBLE else View.GONE
+        playButton.isVisible = count >= 1
+        rewindButton.isVisible = count >= 3
+        forwardButton.isVisible = count >= 3
+        prevButton.isVisible = count >= 5
+        nextButton.isVisible = count >= 5
         nextButton.alpha = if (service.hasNext()) 1f else 0.4f
     }
 

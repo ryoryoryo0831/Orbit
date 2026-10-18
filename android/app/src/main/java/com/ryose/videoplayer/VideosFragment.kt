@@ -14,6 +14,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.core.view.MenuProvider
+import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -170,7 +171,7 @@ class VideosFragment : BaseListFragment() {
     private fun load() {
         val ctx = requireContext()
         loadedWithAccess = ctx.hasMediaAccess(audio = false)
-        limitedBanner.visibility = if (loadedWithAccess && isLimitedAccess(ctx)) View.VISIBLE else View.GONE
+        limitedBanner.isVisible = loadedWithAccess && isLimitedAccess(ctx)
         if (!loadedWithAccess) {
             showNeedPermission()
             return

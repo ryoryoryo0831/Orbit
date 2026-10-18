@@ -129,6 +129,6 @@
         android:gravity="center"
         android:padding="4dp"
         android:textColor="#FFFFFF"
-        android:textSize="10sp"
+        android:textSize="11sp"
         android:visibility="gone" />
 </FrameLayout>

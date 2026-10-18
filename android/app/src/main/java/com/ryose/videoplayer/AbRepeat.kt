@@ -10,6 +10,8 @@ import android.util.AttributeSet
 import android.view.View
 import android.widget.ImageButton
 import android.widget.SeekBar
+import androidx.core.content.edit
+import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 
@@ -29,11 +31,11 @@ class AbStore(context: Context) {
 
     fun save(key: String, a: Long, b: Long) {
         if (a < 0 || b <= a) return
-        prefs.edit().putString(key, "$a,$b").apply()
+        prefs.edit { putString(key, "$a,$b") }
     }
 
     fun clear(key: String) {
-        if (prefs.contains(key)) prefs.edit().remove(key).apply()
+        if (prefs.contains(key)) prefs.edit { remove(key) }
     }
 }
 
@@ -155,7 +157,7 @@ class AbRepeatBar(
         val a = s?.abA ?: -1
         val b = s?.abB ?: -1
         if (a >= 0) open = true
-        panel.visibility = if (open && s != null) View.VISIBLE else View.GONE
+        panel.isVisible = open && s != null
         range.set(a, b, s?.lengthMs ?: 0)
         style(aButton, if (a >= 0) "A  ${formatAbTime(a)}" else "A を設定", a >= 0)
         style(bButton, if (b >= 0) "B  ${formatAbTime(b)}" else "B を設定", b >= 0)

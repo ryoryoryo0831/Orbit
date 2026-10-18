@@ -16,6 +16,8 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.view.Surface
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.get
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IVLCVout
@@ -251,7 +253,7 @@ object VlcThumbnailer {
                 val buf = ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder())
                 GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf)
                 buf.rewind()
-                return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { copyPixelsFromBuffer(buf) }
+                return createBitmap(w, h).apply { copyPixelsFromBuffer(buf) }
             } finally {
                 GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
                 GLES20.glDeleteFramebuffers(1, ids, 1)
@@ -269,7 +271,7 @@ object VlcThumbnailer {
             while (y < b.height) {
                 var x = stepX / 2
                 while (x < b.width) {
-                    val c = b.getPixel(x, y)
+                    val c = b[x, y]
                     sum += ((c shr 16 and 0xFF) * 299 + (c shr 8 and 0xFF) * 587 + (c and 0xFF) * 114) / 1000
                     n++
                     x += stepX

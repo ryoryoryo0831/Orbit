@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Size
+import androidx.core.graphics.scale
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.DataSource
@@ -126,7 +127,7 @@ object ThumbCache {
         val longSide = maxOf(b.width, b.height)
         if (longSide <= SIZE) return b
         val ratio = SIZE.toFloat() / longSide
-        return Bitmap.createScaledBitmap(b, (b.width * ratio).toInt().coerceAtLeast(1), (b.height * ratio).toInt().coerceAtLeast(1), true)
+        return b.scale((b.width * ratio).toInt().coerceAtLeast(1), (b.height * ratio).toInt().coerceAtLeast(1))
     }
 
     /** 増えすぎたら、しばらく使っていないものから消す */

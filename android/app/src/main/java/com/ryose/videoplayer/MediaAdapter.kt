@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.view.ViewCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import coil.dispose
@@ -245,7 +246,7 @@ class MediaAdapter(
         }
         more?.let { b ->
             val show = !(row0 is Row.Folder && row0.busy) && hasMenu(row0)
-            b.visibility = if (show) View.VISIBLE else View.GONE
+            b.isVisible = show
             b.setOnClickListener { onLongClick(holder.bindingAdapterPosition) }
             // 読み上げで、どの行のメニューか分かるように
             b.contentDescription = when (row0) {
@@ -272,7 +273,7 @@ class MediaAdapter(
                 holder.name.text = row.name
                 holder.info.text = row.info
                 holder.info.visibility = if (row.info.isEmpty()) View.GONE else View.VISIBLE
-                holder.busy.visibility = if (row.busy) View.VISIBLE else View.GONE
+                holder.busy.isVisible = row.busy
                 // 案内の行はリモコンでも選べないように（ほかの行に使い回されたら選べるように戻す）
                 holder.itemView.isFocusable = !row.busy
                 if (row.busy) {
@@ -301,7 +302,7 @@ class MediaAdapter(
                 holder.meta.contentDescription = if (fav) "お気に入り、${row.meta}" else null
                 holder.meta.visibility = if (row.meta.isEmpty() && !fav) View.GONE else View.VISIBLE
                 holder.duration.text = formatTime(item.durationMs)
-                holder.duration.visibility = if (item.durationMs > 0) View.VISIBLE else View.GONE
+                holder.duration.isVisible = item.durationMs > 0
                 val fallbackIcon = when {
                     item.isAudio -> R.drawable.ic_music_note
                     // DVD・Blu-ray のディスクイメージは円盤のアイコン
@@ -327,7 +328,7 @@ class MediaAdapter(
                 bindProgress(holder, item)
 
                 val drag = dragListener
-                holder.dragHandle.visibility = if (drag != null) View.VISIBLE else View.GONE
+                holder.dragHandle.isVisible = drag != null
                 holder.dragHandle.setOnTouchListener { _, e ->
                     if (e.actionMasked == MotionEvent.ACTION_DOWN) drag?.invoke(holder)
                     false

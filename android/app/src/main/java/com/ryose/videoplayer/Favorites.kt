@@ -2,6 +2,8 @@ package com.ryose.videoplayer
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,7 +22,7 @@ class FavoriteFolders(context: Context) {
         val arr = JSONArray(prefs.getString(KEY, "[]"))
         (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
-            Entry(Uri.parse(o.getString("uri")), o.optString("title"))
+            Entry(o.getString("uri").toUri(), o.optString("title"))
         }
     } catch (_: Exception) {
         emptyList()
@@ -29,7 +31,7 @@ class FavoriteFolders(context: Context) {
     private fun save(list: List<Entry>) {
         val arr = JSONArray()
         list.forEach { arr.put(JSONObject().put("uri", it.uri.toString()).put("title", it.title)) }
-        prefs.edit().putString(KEY, arr.toString()).apply()
+        prefs.edit { putString(KEY, arr.toString()) }
     }
 
     fun contains(uri: Uri) = all().any { it.uri == uri }

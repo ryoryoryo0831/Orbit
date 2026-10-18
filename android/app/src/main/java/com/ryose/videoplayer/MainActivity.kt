@@ -17,9 +17,12 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -84,7 +87,7 @@ class MainActivity : AppCompatActivity() {
             // 初めてのお願いを閉じただけでも「もう聞かない」と同じ結果になるので、2回目に断られてから設定へ案内する
             val prefs = getSharedPreferences(PERMISSION_PREFS, MODE_PRIVATE)
             val denials = prefs.getInt(KEY_MEDIA_DENIALS, 0) + 1
-            prefs.edit().putInt(KEY_MEDIA_DENIALS, denials).apply()
+            prefs.edit { putInt(KEY_MEDIA_DENIALS, denials) }
             if (denials >= 2 && result.keys.none { shouldShowRequestPermissionRationale(it) }) {
                 showAccessChoices()
             }
@@ -244,8 +247,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 「元に戻す」のお知らせを出す位置（ミニプレイヤーか下のタブの上。タブが左にある画面ではミニプレイヤーの上だけ） */
     fun snackbarAnchor(): View? = when {
-        miniPlayer.visibility == View.VISIBLE -> miniPlayer
-        bottomNav is com.google.android.material.bottomnavigation.BottomNavigationView && bottomNav.visibility == View.VISIBLE -> bottomNav
+        miniPlayer.isVisible -> miniPlayer
+        bottomNav is com.google.android.material.bottomnavigation.BottomNavigationView && bottomNav.isVisible -> bottomNav
         else -> null
     }
 
@@ -323,7 +326,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage("端末の設定でこのアプリの「権限」から「音楽とオーディオ」「写真と動画」を許可するか、「すべてのファイルへのアクセス」を許可してください。")
             .setPositiveButton("アプリの設定を開く") { _, _ ->
                 runCatching {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
                 }
             }
             .setNeutralButton("すべてのファイル") { _, _ -> requestStorageAccess() }
@@ -335,9 +338,9 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= 30) {
             // 機種（Android TV など）によっては設定画面が無いので、順に試す
             val intents = listOf(
-                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")),
+                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()),
                 Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
             )
             val opened = intents.any { runCatching { startActivity(it) }.isSuccess }
             if (!opened) {

@@ -1,6 +1,7 @@
 package com.ryose.videoplayer
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import java.io.File
 import java.util.UUID
@@ -33,7 +34,7 @@ class HistoryStore(context: Context) {
         cache = list
         val arr = JSONArray()
         list.forEach { arr.put(it.item.toJson().put("playedAt", it.playedAt)) }
-        prefs.edit().putString(KEY, arr.toString()).apply()
+        prefs.edit { putString(KEY, arr.toString()) }
     }
 
     fun add(item: PlaylistItem) = synchronized(lock) {

@@ -77,6 +77,14 @@ android {
         abortOnError = false
         textReport = true
         textOutput = file("build/reports/lint.txt")
+        disable += setOf(
+            // 日本語だけで使うアプリなので、画面の文字を翻訳用の strings.xml に移さない（多言語対応は見送り）
+            "SetTextI18n",
+            // ライブラリの新しい版は compileSdk 36.1・37 や AGP 9 が必要で、作り直しに近い移行になるので見送っている
+            // （引き継ぎメモの 1.0.42）。版を上げるときは developer.android.com のリリースノートで調べる
+            "GradleDependency",
+            "NewerVersionAvailable",
+        )
     }
     testOptions {
         // テストでは Android の部品は使わない（呼ばれても既定値を返す）

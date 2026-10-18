@@ -9,6 +9,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -34,12 +35,12 @@ object EqualizerPrefs {
     }
 
     fun save(context: Context, s: EqSettings) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
-            .putBoolean("enabled", s.enabled)
-            .putInt("preset", s.preset)
-            .putFloat("preamp", s.preamp)
-            .putString("bands", s.bands.joinToString(","))
-            .apply()
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit {
+            putBoolean("enabled", s.enabled)
+            putInt("preset", s.preset)
+            putFloat("preamp", s.preamp)
+            putString("bands", s.bands.joinToString(","))
+        }
     }
 }
 

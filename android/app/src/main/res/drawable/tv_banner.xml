@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android TV のホーム画面に出す横長のバナー（アイコンと同じグラデーションと再生マーク） -->
+<!-- Android TV のホーム画面に出す横長のバナー（アイコンと同じグラデーションと再生マーク）。
+     バナーの大きさは 320×180 と決まっているので、200×200 までにという警告（VectorRaster）は当てはまらない -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="VectorRaster"
     android:width="320dp"
     android:height="180dp"
     android:viewportWidth="320"

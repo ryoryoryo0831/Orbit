@@ -14,6 +14,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
+import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -118,7 +121,7 @@ class ServerStore(context: Context) {
             val enc = runCatching { Secrets.encrypt(s.password) }.getOrDefault("")
             arr.put(s.copy(password = enc).toJson())
         }
-        prefs.edit().putString("list", arr.toString()).apply()
+        prefs.edit { putString("list", arr.toString()) }
     }
 
     fun get(id: String) = all().find { it.id == id }
@@ -183,12 +186,11 @@ object UrlHistory {
 
     fun add(context: Context, url: String) {
         val list = (listOf(url) + load(context).filterNot { it == url }).take(20)
-        context.getSharedPreferences("urls", Context.MODE_PRIVATE).edit()
-            .putString("list", JSONArray(list).toString()).apply()
+        context.getSharedPreferences("urls", Context.MODE_PRIVATE).edit { putString("list", JSONArray(list).toString()) }
     }
 
     fun clear(context: Context) {
-        context.getSharedPreferences("urls", Context.MODE_PRIVATE).edit().remove("list").apply()
+        context.getSharedPreferences("urls", Context.MODE_PRIVATE).edit { remove("list") }
     }
 }
 
@@ -268,7 +270,7 @@ object NetworkDialogs {
 
     fun playUrl(activity: Activity, raw: String) {
         val url = if ("://" in raw) raw else "https://$raw"
-        val uri = Uri.parse(url)
+        val uri = url.toUri()
         if (uri.host.isNullOrEmpty() && uri.scheme !in listOf("udp", "rtp")) {
             Toast.makeText(activity, "URLの形式が正しくありません", Toast.LENGTH_SHORT).show()
             return
@@ -296,7 +298,7 @@ object NetworkDialogs {
         val typeButton = MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
         fun refreshType() {
             typeButton.text = "種類：${Server.PROTOCOLS[scheme]}"
-            domainL.visibility = if (scheme == "smb") View.VISIBLE else View.GONE
+            domainL.isVisible = scheme == "smb"
             val noLogin = scheme == "nfs"
             userL.visibility = if (noLogin) View.GONE else View.VISIBLE
             passL.visibility = if (noLogin) View.GONE else View.VISIBLE

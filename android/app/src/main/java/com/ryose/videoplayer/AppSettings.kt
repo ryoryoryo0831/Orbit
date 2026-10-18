@@ -3,6 +3,7 @@ package com.ryose.videoplayer
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 
 /** 設定画面で変更できる設定（キーは res/xml/preferences.xml と同じ） */
@@ -62,10 +63,10 @@ object AppSettings {
     fun ensureHwDecodingDefault(c: Context) {
         val p = prefs(c)
         if (!p.contains(KEY_HW_DECODING)) {
-            p.edit().putBoolean(KEY_HW_DECODING, if (isTv(c)) true else p.getBoolean("hw_decoding", true)).apply()
+            p.edit { putBoolean(KEY_HW_DECODING, if (isTv(c)) true else p.getBoolean("hw_decoding", true)) }
         }
         if (isTv(c) && !p.getBoolean(KEY_TV_HW_RESTORED, false)) {
-            p.edit().putBoolean(KEY_HW_DECODING, true).putBoolean(KEY_TV_HW_RESTORED, true).apply()
+            p.edit { putBoolean(KEY_HW_DECODING, true); putBoolean(KEY_TV_HW_RESTORED, true) }
         }
     }
 
@@ -111,7 +112,7 @@ object AppSettings {
         return c.getSharedPreferences("player", Context.MODE_PRIVATE).getString("leave_action", null) ?: "POPUP"
     }
 
-    fun setLeaveAction(c: Context, v: String) = prefs(c).edit().putString("leave_action", v).apply()
+    fun setLeaveAction(c: Context, v: String) = prefs(c).edit { putString("leave_action", v) }
 
     // ジェスチャー
     fun gestureBrightness(c: Context) = bool(c, "gesture_brightness", true)
@@ -126,25 +127,25 @@ object AppSettings {
     fun popupPosition(c: Context): Pair<Int, Int>? = prefs(c).takeIf { it.contains("popup_x") }
         ?.let { it.getInt("popup_x", 0) to it.getInt("popup_y", 0) }
     fun setPopupPlacement(c: Context, sizeDp: Int, x: Int, y: Int) =
-        prefs(c).edit().putInt("popup_size", sizeDp).putInt("popup_x", x).putInt("popup_y", y).apply()
+        prefs(c).edit { putInt("popup_size", sizeDp); putInt("popup_x", x); putInt("popup_y", y) }
 
     /** 自由な小窓の許可を、再生画面で一度お願いした */
     fun popupPermissionAsked(c: Context) = bool(c, "popup_permission_asked", false)
-    fun setPopupPermissionAsked(c: Context) = prefs(c).edit().putBoolean("popup_permission_asked", true).apply()
+    fun setPopupPermissionAsked(c: Context) = prefs(c).edit { putBoolean("popup_permission_asked", true) }
 
     /** 通知の許可（Android 13 以降）を一度聞いたか。断られても何度も聞かないように */
     fun notificationPermissionAsked(c: Context) = bool(c, "notification_permission_asked", false)
-    fun setNotificationPermissionAsked(c: Context) = prefs(c).edit().putBoolean("notification_permission_asked", true).apply()
+    fun setNotificationPermissionAsked(c: Context) = prefs(c).edit { putBoolean("notification_permission_asked", true) }
 
     // 一覧
     fun videosGrid(c: Context) = bool(c, "videos_grid", false)
-    fun setVideosGrid(c: Context, v: Boolean) = prefs(c).edit().putBoolean("videos_grid", v).apply()
+    fun setVideosGrid(c: Context, v: Boolean) = prefs(c).edit { putBoolean("videos_grid", v) }
     fun videosByFolder(c: Context) = bool(c, "videos_by_folder", false)
-    fun setVideosByFolder(c: Context, v: Boolean) = prefs(c).edit().putBoolean("videos_by_folder", v).apply()
+    fun setVideosByFolder(c: Context, v: Boolean) = prefs(c).edit { putBoolean("videos_by_folder", v) }
     /** 動画タブの並び順（"DATE"・"NAME"・"DURATION"） */
     fun videosSort(c: Context) = string(c, "videos_sort", "DATE")
-    fun setVideosSort(c: Context, v: String) = prefs(c).edit().putString("videos_sort", v).apply()
+    fun setVideosSort(c: Context, v: String) = prefs(c).edit { putString("videos_sort", v) }
     /** 音楽タブの表示（"SONGS"・"ALBUMS"・"ARTISTS"） */
     fun musicMode(c: Context) = string(c, "music_mode", "SONGS")
-    fun setMusicMode(c: Context, v: String) = prefs(c).edit().putString("music_mode", v).apply()
+    fun setMusicMode(c: Context, v: String) = prefs(c).edit { putString("music_mode", v) }
 }

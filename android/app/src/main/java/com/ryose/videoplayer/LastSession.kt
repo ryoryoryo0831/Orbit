@@ -1,6 +1,7 @@
 package com.ryose.videoplayer
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -64,7 +65,7 @@ object LastSession {
 
     fun save(context: Context, items: List<PlaylistItem>, index: Int, shuffle: Boolean, order: List<Int>, advance: Boolean) {
         if (index !in items.indices) return
-        prefs(context).edit().putBoolean("stopped", false).apply()
+        prefs(context).edit { putBoolean("stopped", false) }
         FileSaver.save(file(context)) {
             val arr = JSONArray()
             items.forEach { arr.put(it.toJson()) }
@@ -76,7 +77,7 @@ object LastSession {
     }
 
     /** わざと再生を終わらせた（画面に戻ったときに、勝手に元に戻さない） */
-    fun markStopped(context: Context) = prefs(context).edit().putBoolean("stopped", true).apply()
+    fun markStopped(context: Context) = prefs(context).edit { putBoolean("stopped", true) }
 
     /** ファイルから読む（時間がかかることがあるので、できるだけ裏のスレッドで呼ぶ） */
     fun load(context: Context): Saved? = runCatching {

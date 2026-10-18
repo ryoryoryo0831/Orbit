@@ -2,10 +2,10 @@
 <!-- タブレットなど幅の広い画面：タブを左に縦に並べる（id は縦長の画面と同じ） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
@@ -33,12 +33,15 @@
             app:menuGravity="center"
             app:paddingTopSystemWindowInsets="false" />
 
+        <!-- 右側の列。id は幅の広い画面だけにある（MainActivity は無ければ何もしない）。
+             中でも weight を使うが、画面の組み立て直しはまれなので、重さは気にしなくてよい -->
         <LinearLayout
             android:id="@+id/contentColumn"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            tools:ignore="InconsistentLayout,NestedWeights">
 
             <FrameLayout
                 android:id="@+id/container"
