@@ -1,7 +1,6 @@
 package com.ryose.videoplayer
 
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Parcelable
 import android.text.TextUtils
@@ -10,107 +9,67 @@ import android.view.View
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.view.MenuProvider
-import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.ryose.videoplayer.FoldersViewModel.Companion.ACTION_ADD_SERVER
+import com.ryose.videoplayer.FoldersViewModel.Companion.ACTION_GRANT
+import com.ryose.videoplayer.FoldersViewModel.Companion.ACTION_OPEN_URL
+import com.ryose.videoplayer.FoldersViewModel.Companion.ROOT_KEY
+import com.ryose.videoplayer.FoldersViewModel.Loc
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.interfaces.IMedia
-import org.videolan.libvlc.util.MediaBrowser
 import java.io.File
 
 /**
- * 「フォルダ」タブ：端末のストレージと、ネットワーク（NAS・DLNA サーバー・登録したサーバー）をたどる
+ * 「フォルダ」タブ：端末のストレージと、ネットワーク（NAS・DLNA サーバー・登録したサーバー）をたどる。
+ * 今いる場所・一覧・ネットワークの閲覧は FoldersViewModel にあり、ここは表示と、画面が要るもの
+ * （ダイアログ・ログインの確認・スクロール位置・フォルダを再生するときの進み具合）だけ
  */
 class FoldersFragment : BaseListFragment() {
 
-    /** 今いる場所。端末内のフォルダか、ネットワーク上の場所 */
-    private sealed class Loc {
-        abstract val key: String
-
-        data class Local(val dir: File) : Loc() {
-            override val key get() = "L|${dir.path}"
-        }
-
-        data class Net(val uri: Uri, val title: String) : Loc() {
-            override val key get() = "N|$uri|$title"
-        }
-
-        companion object {
-            fun parse(s: String): Loc? = when {
-                s.startsWith("L|") -> Local(File(s.removePrefix("L|")))
-                s.startsWith("N|") -> s.removePrefix("N|").split("|", limit = 2)
-                    .takeIf { it.size == 2 }?.let { Net(it[0].toUri(), it[1]) }
-                else -> null
-            }
-        }
-    }
-
-    /** たどってきた場所（空ならトップ） */
-    private val stack = ArrayList<Loc>()
-    /** 読み込み終わったネットワークのフォルダの中身（場所ごと）。戻ってきたときに待たずに表示する */
-    private val netCache = mutableMapOf<String, List<Row>>()
-    private val current get() = stack.lastOrNull()
-    @Volatile
-    private var roots: List<MediaFiles.Root> = emptyList()
+    private lateinit var vm: FoldersViewModel
     /** 場所ごとのスクロール位置（戻ったときに元の位置に戻すため） */
     private val scrollStates = mutableMapOf<String, Parcelable?>()
+    /** 移動したあと、その場所の一覧を表示したときに戻すスクロール位置（null なら一番上） */
+    private var pendingScroll: Pair<String, Parcelable?>? = null
+    private var shownLocKey: String? = null
 
-    // ネットワーク
+    // ログインの確認などのダイアログと、ネットワークのフォルダをまとめて再生するときは、再生サービスの VLC を使う
     private var svc: PlaybackService? = null
-    private var browser: MediaBrowser? = null
-    /** 自動で見つかったネットワーク上のサーバー（uri → 行） */
-    private val discovered = linkedMapOf<String, Row.Folder>()
-    /** ネットワーク上のフォルダの中身 */
-    private val netRows = mutableListOf<Row>()
-    private var multicastLock: WifiManager.MulticastLock? = null
     private lateinit var connection: PlaybackConnection
-    private val dialogHandler by lazy { VlcDialogHandler(requireActivity()) { (current as? Loc.Net)?.uri } }
-    private val renderNetTask = Runnable { renderNet(finished = false) }
-    /** サーバーが応答しないまま待ち続けないように、しばらく何も届かなければあきらめる */
-    private val netTimeoutTask = Runnable {
-        if (current is Loc.Net && netRows.isEmpty() && browser != null && isAdded) {
-            stopBrowser()
-            showRows(
-                emptyList(),
-                "サーバーから応答がありません。\n\nサーバーの電源やネットワークを確認して、もう一度お試しください。",
-                R.drawable.ic_lan,
-                actionLabel = "再試行",
-                action = ::reloadNet,
-            )
-        }
-    }
+    private val dialogHandler by lazy { VlcDialogHandler(requireActivity()) { (vm.state.value.current as? Loc.Net)?.uri } }
 
     private val backCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = goUp()
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        savedInstanceState?.getStringArrayList(KEY_STACK)?.mapNotNullTo(stack) { Loc.parse(it) }
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-        requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
-        // ネットワークの閲覧には VLC のエンジンが必要なので、再生サービスにつなぐ
-        connection = PlaybackConnection(requireContext(), autoCreate = true, onConnected = { s ->
-            svc = s
-            if (isResumed) {
-                s.setDialogCallbacks(dialogHandler)
-                // 端末内のフォルダは onResume で読み込み済み。ネットワークの閲覧・検出はエンジンが必要なのでここで始める
-                if (current !is Loc.Local) load()
-            }
-        }, onDisconnected = { svc = null })
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        vm = ViewModelProvider(this)[FoldersViewModel::class.java]
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putStringArrayList(KEY_STACK, ArrayList(stack.map { it.key }))
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+        requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
+        connection = PlaybackConnection(requireContext(), autoCreate = true, onConnected = { s ->
+            svc = s
+            if (isResumed) s.setDialogCallbacks(dialogHandler)
+        }, onDisconnected = { svc = null })
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect(::render)
+            }
+        }
     }
 
     override fun onStart() {
@@ -126,137 +85,76 @@ class FoldersFragment : BaseListFragment() {
 
     override fun onResume() {
         super.onResume()
-        svc?.let { it.setDialogCallbacks(dialogHandler) }
+        svc?.setDialogCallbacks(dialogHandler)
         // 再生から戻ってきたときなどは、スクロール位置を保ったまま読み込み直す
         // （ネットワークのフォルダは覚えておいた中身を出すので、待たされない）
-        load(list.layoutManager?.onSaveInstanceState())
+        keepScroll()
+        vm.onVisible()
     }
 
     override fun onPause() {
         super.onPause()
         // 他のタブを見ているときは「戻る」でフォルダを上がらない
         backCallback.isEnabled = false
-        stopBrowser()
-        svc?.let { it.setDialogCallbacks(null) }
+        vm.onHidden()
+        svc?.setDialogCallbacks(null)
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        list.removeCallbacks(renderNetTask)
         netCollector?.cancel()
         netCollector = null
         netDialog?.dismiss()
         netDialog = null
     }
 
-    // ---------- お気に入り ----------
+    // ---------- 表示 ----------
 
-    /** 上のバーの星：今いる場所をお気に入りに追加・削除する */
-    private val menuProvider = object : MenuProvider {
-        override fun onCreateMenu(menu: android.view.Menu, menuInflater: android.view.MenuInflater) {
-            menuInflater.inflate(R.menu.folders_menu, menu)
+    private fun render(s: FoldersViewModel.UiState) {
+        backCallback.isEnabled = isResumed && s.stack.isNotEmpty()
+        if (shownLocKey != s.locKey) {
+            shownLocKey = s.locKey
+            activity?.invalidateOptionsMenu()
         }
-
-        override fun onPrepareMenu(menu: android.view.Menu) {
-            menu.findItem(R.id.action_play_folder)?.isVisible = current != null
-            val item = menu.findItem(R.id.action_favorite) ?: return
-            val loc = current
-            item.isVisible = loc != null
-            val fav = loc != null && FavoriteFolders(requireContext()).contains(uriOf(loc))
-            item.setIcon(if (fav) R.drawable.ic_star else R.drawable.ic_star_border)
-            item.title = if (fav) "お気に入りから外す" else "お気に入りに追加"
-        }
-
-        override fun onMenuItemSelected(menuItem: android.view.MenuItem): Boolean {
-            when (menuItem.itemId) {
-                R.id.action_play_folder -> when (val loc = current) {
-                    is Loc.Local -> ActionSheet.show(requireContext(), labelOf(loc), playFolderItems(loc.dir))
-                    is Loc.Net -> ActionSheet.show(requireContext(), labelOf(loc), playNetItems(loc.uri, labelOf(loc)))
-                    null -> {}
-                }
-                R.id.action_favorite -> current?.let { toggleFavorite(uriOf(it), labelOf(it)) }
-                else -> return false
+        renderPath(s)
+        when {
+            s.needPermission -> showNeedPermission()
+            // ネットワークのフォルダを読み込み始めたところ：空のお知らせは出さずに、くるくるだけ
+            s.loading && s.rows.isEmpty() -> {
+                adapter.rows = emptyList()
+                emptyView.visibility = View.GONE
+                list.visibility = View.VISIBLE
+                loading.visibility = View.VISIBLE
+                updateSubtitle()
             }
-            return true
-        }
-    }
-
-    private fun uriOf(loc: Loc): Uri = when (loc) {
-        is Loc.Local -> Uri.fromFile(loc.dir)
-        is Loc.Net -> loc.uri
-    }
-
-    private fun toggleFavorite(uri: Uri, title: String) {
-        val favorites = FavoriteFolders(requireContext())
-        val before = favorites.all()
-        val added = favorites.toggle(uri, title)
-        if (added) {
-            Toast.makeText(requireContext(), "「$title」をお気に入りに追加しました", Toast.LENGTH_SHORT).show()
-        } else {
-            // 外したときは「元に戻す」で、元の順番のまま戻せる
-            requireActivity().showUndo("「$title」をお気に入りから外しました") {
-                favorites.restoreAll(before)
-                if (view != null) {
-                    requireActivity().invalidateOptionsMenu()
-                    if (current == null) renderTop()
-                }
+            else -> {
+                showRows(
+                    s.rows, s.emptyMessage, s.emptyIcon,
+                    actionLabel = if (s.retry) "再試行" else null,
+                    action = if (s.retry) vm::reloadNet else null,
+                )
+                if (s.loading) loading.visibility = View.VISIBLE
             }
         }
-        requireActivity().invalidateOptionsMenu()
-        if (current == null) renderTop()
-    }
-
-    private fun favoriteItem(uri: Uri, title: String): SheetItem {
-        val fav = FavoriteFolders(requireContext()).contains(uri)
-        return SheetItem(
-            if (fav) R.drawable.ic_star else R.drawable.ic_star_border,
-            if (fav) "お気に入りから外す" else "お気に入りに追加",
-            active = fav,
-        ) { toggleFavorite(uri, title) }
-    }
-
-    /** お気に入りを開く。端末内のフォルダは、ストレージの一番上からの道順も積んでおく（戻るで一つ上へ） */
-    private fun openFavorite(entry: FavoriteFolders.Entry) {
-        if (entry.isLocal) {
-            val dir = File(entry.uri.path ?: return)
-            val root = roots.firstOrNull { dir.path == it.dir.path || dir.path.startsWith(it.dir.path + "/") }
-            scrollStates[ROOT_KEY] = list.layoutManager?.onSaveInstanceState()
-            stack.clear()
-            if (root != null) {
-                var d: File? = dir
-                val chain = mutableListOf<File>()
-                while (d != null && d.path != root.dir.path) {
-                    chain += d
-                    d = d.parentFile
-                }
-                stack += Loc.Local(root.dir)
-                chain.asReversed().forEach { stack += Loc.Local(it) }
-            } else {
-                stack += Loc.Local(dir)
-            }
-            list.scrollToPosition(0)
-            load()
-        } else {
-            push(Loc.Net(entry.uri, entry.title))
+        // 移動した先の一覧が出たら、スクロール位置を戻す
+        val pending = pendingScroll
+        if (pending != null && pending.first == s.locKey && (s.rows.isNotEmpty() || !s.loading)) {
+            pendingScroll = null
+            val state = pending.second
+            if (state != null) list.layoutManager?.onRestoreInstanceState(state) else list.scrollToPosition(0)
         }
     }
 
     // 中に入っているときは、上のバーに場所を表示する
-    override fun subtitle(): String? = if (stack.isEmpty()) "ストレージとネットワーク" else null
-
-    /** 場所の表示名（ストレージの一番上なら「内部共有ストレージ」など） */
-    private fun labelOf(loc: Loc): String = when (loc) {
-        is Loc.Local -> roots.find { it.dir.path == loc.dir.path }?.name ?: loc.dir.name
-        is Loc.Net -> loc.title
-    }
+    override fun subtitle(): String? = if (vm.state.value.stack.isEmpty()) "ストレージとネットワーク" else null
 
     /** 「トップ › 内部共有ストレージ › Movies」のような場所の表示。タップでその階層へ戻る */
-    private fun renderPath() {
+    private fun renderPath(s: FoldersViewModel.UiState) {
         val view = view ?: return
         val scroll = view.findViewById<HorizontalScrollView>(R.id.pathScroll)
         val bar = view.findViewById<LinearLayout>(R.id.pathBar)
         bar.removeAllViews()
-        if (stack.isEmpty()) {
+        if (s.stack.isEmpty()) {
             scroll.visibility = View.GONE
             return
         }
@@ -285,59 +183,64 @@ class FoldersFragment : BaseListFragment() {
                 if (!isLast) {
                     setBackgroundResource(android.R.drawable.list_selector_background)
                     setOnClickListener { popTo(level) }
-                } else if (current is Loc.Net) {
+                } else if (s.current is Loc.Net) {
                     // 今いるネットワークのフォルダの名前をタップすると、読み込み直す
                     setBackgroundResource(android.R.drawable.list_selector_background)
-                    setOnClickListener { reloadNet() }
+                    setOnClickListener { vm.reloadNet() }
                 }
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT))
         }
         segment("トップ", 0, false)
-        stack.forEachIndexed { i, loc -> segment(labelOf(loc), i + 1, i == stack.lastIndex) }
+        s.labels.forEachIndexed { i, label -> segment(label, i + 1, i == s.labels.lastIndex) }
         // 一番奥（今いる場所）が見えるように右端までスクロール
         scroll.post { scroll.fullScroll(View.FOCUS_RIGHT) }
     }
 
-    /** 場所の表示をタップしたとき：その階層まで戻る */
+    // ---------- 移動 ----------
+
+    private val currentKey get() = vm.state.value.current?.key ?: ROOT_KEY
+
+    /** 読み込み直したあとも、今のスクロール位置のまま */
+    private fun keepScroll() {
+        pendingScroll = currentKey to list.layoutManager?.onSaveInstanceState()
+    }
+
+    private fun push(loc: Loc) {
+        scrollStates[currentKey] = list.layoutManager?.onSaveInstanceState()
+        pendingScroll = vm.push(loc) to null
+    }
+
     private fun popTo(level: Int) {
-        if (level >= stack.size) return
-        while (stack.size > level) stack.removeAt(stack.lastIndex)
-        load(restoreScroll = scrollStates[current?.key ?: ROOT_KEY])
+        val key = vm.popTo(level) ?: return
+        pendingScroll = key to scrollStates[key]
     }
 
-    // ---------- 読み込み ----------
-
-    override fun onFilesChanged() = load(list.layoutManager?.onSaveInstanceState())
-
-    private fun load(restoreScroll: Parcelable? = null) {
-        backCallback.isEnabled = isResumed && stack.isNotEmpty()
-        activity?.invalidateOptionsMenu()
-        stopBrowser()
-        renderPath()
-        when (val loc = current) {
-            null -> loadTop(restoreScroll)
-            is Loc.Local -> loadLocal(loc.dir, restoreScroll)
-            is Loc.Net -> loadNet(loc, restoreScroll)
-        }
+    override fun goToTopLevel(): Boolean {
+        if (vm.state.value.stack.isEmpty()) return false
+        pendingScroll = ROOT_KEY to null
+        vm.goTop()
+        return true
     }
 
-    private fun reloadNet() {
-        val loc = current as? Loc.Net ?: return
-        netCache.remove(loc.key)
-        load()
+    private fun goUp() {
+        val key = vm.goUp() ?: return
+        pendingScroll = key to scrollStates.remove(key)
     }
 
-    /** トップ：ストレージ・登録したサーバー・見つかったサーバー */
-    private fun loadTop(restoreScroll: Parcelable?) {
-        val ctx = requireContext()
-        viewLifecycleOwner.lifecycleScope.launch {
-            roots = withContext(Dispatchers.IO) { MediaFiles.roots(ctx) }
-            if (current != null) return@launch
-            renderTop()
-            renderPath()
-            restoreScroll?.let { list.layoutManager?.onRestoreInstanceState(it) }
-        }
-        startDiscovery()
+    private fun openFavorite(entry: FavoriteFolders.Entry) {
+        scrollStates[ROOT_KEY] = list.layoutManager?.onSaveInstanceState()
+        vm.openFavorite(entry)
+        pendingScroll = currentKey to null
+    }
+
+    override fun onFilesChanged() {
+        keepScroll()
+        vm.reload()
+    }
+
+    private fun reloadKeepingScroll() {
+        keepScroll()
+        vm.reload()
     }
 
     override fun onGrantClick() {
@@ -346,221 +249,61 @@ class FoldersFragment : BaseListFragment() {
 
     override val needPermissionText: Int get() = R.string.need_permission
 
-    private fun renderTop() {
-        if (current != null || !isAdded) return
-        val ctx = requireContext()
-        val rows = mutableListOf<Row>()
-        val favorites = FavoriteFolders(ctx).all()
-        if (favorites.isNotEmpty()) {
-            rows += Row.Header("お気に入り")
-            favorites.forEach { f ->
-                val info = if (f.isLocal) f.uri.path.orEmpty() else "${kindLabel(f.uri)} · ${f.uri.host.orEmpty()}${f.uri.path.orEmpty()}"
-                rows += Row.Folder(f.title, info, R.drawable.ic_star, id = "fav:${f.uri}")
-            }
+    // ---------- お気に入り ----------
+
+    /** 上のバーの星：今いる場所をお気に入りに追加・削除する */
+    private val menuProvider = object : MenuProvider {
+        override fun onCreateMenu(menu: android.view.Menu, menuInflater: android.view.MenuInflater) {
+            menuInflater.inflate(R.menu.folders_menu, menu)
         }
-        rows += Row.Header("ストレージ")
-        if (ctx.hasStorageAccess()) {
-            roots.forEach { rows += Row.Folder(it.name, it.dir.path, R.drawable.ic_storage, it.dir, isStorage = true) }
+
+        override fun onPrepareMenu(menu: android.view.Menu) {
+            val s = vm.state.value
+            menu.findItem(R.id.action_play_folder)?.isVisible = s.current != null
+            val item = menu.findItem(R.id.action_favorite) ?: return
+            item.isVisible = s.current != null
+            item.setIcon(if (s.favorite) R.drawable.ic_star else R.drawable.ic_star_border)
+            item.title = if (s.favorite) "お気に入りから外す" else "お気に入りに追加"
+        }
+
+        override fun onMenuItemSelected(menuItem: android.view.MenuItem): Boolean {
+            when (menuItem.itemId) {
+                R.id.action_play_folder -> when (val loc = vm.state.value.current) {
+                    is Loc.Local -> ActionSheet.show(requireContext(), vm.labelOf(loc), playFolderItems(loc.dir))
+                    is Loc.Net -> ActionSheet.show(requireContext(), vm.labelOf(loc), playNetItems(loc.uri, vm.labelOf(loc)))
+                    null -> {}
+                }
+                R.id.action_favorite -> vm.state.value.current?.let { toggleFavorite(vm.uriOf(it), vm.labelOf(it)) }
+                else -> return false
+            }
+            return true
+        }
+    }
+
+    private fun toggleFavorite(uri: Uri, title: String) {
+        val (added, before) = vm.toggleFavorite(uri, title)
+        if (added) {
+            Toast.makeText(requireContext(), "「$title」をお気に入りに追加しました", Toast.LENGTH_SHORT).show()
         } else {
-            rows += Row.Folder("端末内のファイルを見る", "タップして「すべてのファイルへのアクセス」を許可", R.drawable.ic_storage, id = ACTION_GRANT)
-        }
-        rows += Row.Header("ネットワーク")
-        ServerStore(ctx).all().forEach { rows += Row.Folder(it.name, it.label, R.drawable.ic_server, id = "server:${it.id}") }
-        rows += discovered.values
-        rows += Row.Folder("サーバーを追加", "NAS（SMB）・FTP・SFTP・NFS", R.drawable.ic_add, id = ACTION_ADD_SERVER)
-        rows += Row.Folder("URLを開く", "http・https・rtsp などのストリーミング", R.drawable.ic_link, id = ACTION_OPEN_URL)
-        if (discovered.isEmpty()) {
-            // 押せる項目ではないので、押せない行にして、探している最中だと分かるようにくるくるを出す
-            rows += Row.Folder(
-                "同じネットワークの機器を探しています…", "DLNA サーバーや共有フォルダが見つかるとここに出ます", R.drawable.ic_lan,
-                id = ROW_SEARCHING, busy = true,
-            )
-        }
-        showRows(rows, "")
-    }
-
-    private fun loadLocal(dir: File, restoreScroll: Parcelable?) {
-        val ctx = requireContext()
-        if (!ctx.hasStorageAccess()) {
-            showNeedPermission()
-            return
-        }
-        viewLifecycleOwner.lifecycleScope.launch {
-            val rows = withContext(Dispatchers.IO) {
-                if (roots.isEmpty()) roots = MediaFiles.roots(ctx)
-                val listing = MediaFiles.list(ctx, dir)
-                listing.folders.map { Row.Folder(it.dir.name, folderInfo(it), dir = it.dir) } +
-                    listing.media.map { Row.Media(it, "") }
+            // 外したときは「元に戻す」で、元の順番のまま戻せる
+            requireActivity().showUndo("「$title」をお気に入りから外しました") {
+                vm.restoreFavorites(before)
+                activity?.invalidateOptionsMenu()
             }
-            if ((current as? Loc.Local)?.dir != dir) return@launch
-            renderPath()
-            showRows(rows, "このフォルダには動画や音楽がありません。", R.drawable.ic_folder)
-            restoreScroll?.let { list.layoutManager?.onRestoreInstanceState(it) }
         }
+        requireActivity().invalidateOptionsMenu()
     }
 
-    private fun folderInfo(f: MediaFiles.Folder): String {
-        val parts = mutableListOf<String>()
-        if (f.folderCount > 0) parts += "${f.folderCount} フォルダ"
-        if (f.videoCount > 0) parts += "${f.videoCount} 本の動画"
-        if (f.audioCount > 0) parts += "${f.audioCount} 曲"
-        return if (parts.isEmpty()) "空" else parts.joinToString(" · ")
+    private fun favoriteItem(uri: Uri, title: String): SheetItem {
+        val fav = vm.isFavorite(uri)
+        return SheetItem(
+            if (fav) R.drawable.ic_star else R.drawable.ic_star_border,
+            if (fav) "お気に入りから外す" else "お気に入りに追加",
+            active = fav,
+        ) { toggleFavorite(uri, title) }
     }
 
-    // ---------- ネットワーク ----------
-
-    /** 同じネットワーク上の DLNA サーバーや共有フォルダを自動で探す */
-    private fun startDiscovery() {
-        val s = svc ?: return
-        acquireMulticast()
-        browser = MediaBrowser(s.libVLC, object : MediaBrowser.EventListener {
-            override fun onMediaAdded(index: Int, media: IMedia) {
-                val uri = media.uri ?: return
-                val title = media.getMeta(IMedia.Meta.Title)?.takeIf { it.isNotBlank() } ?: uri.host ?: uri.toString()
-                discovered[uri.toString()] = Row.Folder(title, kindLabel(uri), R.drawable.ic_lan, id = "net:$uri")
-                renderTop()
-            }
-
-            override fun onMediaRemoved(index: Int, media: IMedia) {
-                media.uri?.let { discovered.remove(it.toString()) }
-                renderTop()
-            }
-
-            override fun onBrowseEnd() {}
-        }).also { it.discoverNetworkShares() }
-    }
-
-    private fun kindLabel(uri: Uri) = when (uri.scheme?.lowercase()) {
-        "upnp" -> "DLNA / UPnP メディアサーバー"
-        "smb" -> "共有フォルダ（SMB）"
-        "ftp", "ftps" -> "FTP"
-        "sftp" -> "SFTP"
-        "nfs" -> "NFS"
-        else -> uri.scheme.orEmpty()
-    }
-
-    /** ネットワーク上のフォルダの中身を読み込む */
-    private fun loadNet(loc: Loc.Net, restoreScroll: Parcelable? = null) {
-        netCache[loc.key]?.let { cached ->
-            showNetRows(cached)
-            restoreScroll?.let { list.layoutManager?.onRestoreInstanceState(it) }
-            return
-        }
-        val s = svc
-        if (s == null) {
-            // サービスにつながったら onConnected から読み込み直す
-            loading.visibility = View.VISIBLE
-            return
-        }
-        netRows.clear()
-        adapter.rows = emptyList()
-        emptyView.visibility = View.GONE
-        list.visibility = View.VISIBLE
-        loading.visibility = View.VISIBLE
-        updateSubtitle()
-        list.removeCallbacks(netTimeoutTask)
-        list.postDelayed(netTimeoutTask, NET_TIMEOUT_MS)
-        browser = MediaBrowser(s.libVLC, object : MediaBrowser.EventListener {
-            override fun onMediaAdded(index: Int, media: IMedia) {
-                val uri = media.uri ?: return
-                val name = media.getMeta(IMedia.Meta.Title)?.takeIf { it.isNotBlank() }
-                    ?: Uri.decode(uri.lastPathSegment ?: uri.toString())
-                netRows += if (media.type == IMedia.Type.Directory) {
-                    Row.Folder(name, "", R.drawable.ic_folder, id = "net:$uri")
-                } else {
-                    Row.Media(PlaylistItem(uri, name, durationMs = media.duration.coerceAtLeast(0)), "")
-                }
-                // まとめて表示を更新する
-                list.removeCallbacks(renderNetTask)
-                list.postDelayed(renderNetTask, 150)
-            }
-
-            override fun onMediaRemoved(index: Int, media: IMedia) {}
-
-            override fun onBrowseEnd() {
-                list.removeCallbacks(netTimeoutTask)
-                list.removeCallbacks(renderNetTask)
-                renderNet(finished = true)
-            }
-        }).also { b ->
-            val media = Media(s.libVLC, loc.uri)
-            ServerStore(requireContext()).optionsFor(loc.uri).forEach { media.addOption(it) }
-            b.browse(media, MediaBrowser.Flag.Interact or MediaBrowser.Flag.NoSlavesAutodetect)
-            media.release()
-        }
-    }
-
-    private fun renderNet(finished: Boolean) {
-        if (current !is Loc.Net || !isAdded) return
-        // フォルダを先に、それぞれ名前順
-        val sorted = netRows.filterIsInstance<Row.Folder>().sortedWith(compareBy(NaturalOrder) { it.name }) +
-            netRows.filterIsInstance<Row.Media>().sortedWith(compareBy(NaturalOrder) { it.item.title })
-        if (sorted.isEmpty() && !finished) return
-        showNetRows(sorted)
-        loading.visibility = if (finished) View.GONE else View.VISIBLE
-        // 最後まで読めた中身は覚えておく（空のときは接続の失敗かもしれないので覚えない）
-        if (finished && sorted.isNotEmpty()) current?.let { netCache[it.key] = sorted }
-    }
-
-    private fun showNetRows(rows: List<Row>) {
-        showRows(
-            rows, "何も見つかりませんでした。\n\n空のフォルダか、接続できなかった可能性があります。", R.drawable.ic_lan,
-            actionLabel = "再試行",
-            action = ::reloadNet,
-        )
-    }
-
-    private fun stopBrowser() {
-        list.removeCallbacks(renderNetTask)
-        list.removeCallbacks(netTimeoutTask)
-        browser?.release()
-        browser = null
-        releaseMulticast()
-    }
-
-    /** 機器の自動検出（mDNS・SSDP）には Wi-Fi のマルチキャスト受信を有効にする必要がある */
-    private fun acquireMulticast() {
-        if (multicastLock?.isHeld == true) return
-        multicastLock = runCatching {
-            requireContext().applicationContext.getSystemService(WifiManager::class.java)
-                .createMulticastLock("VideoPlayer").apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
-        }.getOrNull()
-    }
-
-    private fun releaseMulticast() {
-        runCatching { multicastLock?.release() }
-        multicastLock = null
-    }
-
-    // ---------- 移動 ----------
-
-    private fun push(loc: Loc) {
-        scrollStates[current?.key ?: ROOT_KEY] = list.layoutManager?.onSaveInstanceState()
-        stack += loc
-        list.scrollToPosition(0)
-        load()
-    }
-
-    override fun goToTopLevel(): Boolean {
-        if (stack.isEmpty()) return false
-        stack.clear()
-        list.scrollToPosition(0)
-        load()
-        return true
-    }
-
-    private fun goUp() {
-        if (stack.isEmpty()) return
-        val leaving = stack.removeAt(stack.lastIndex)
-        // 端末内のフォルダは、親フォルダへ（ストレージの一番上ならトップへ）
-        if (leaving is Loc.Local && stack.isEmpty() && roots.none { it.dir.path == leaving.dir.path }) {
-            leaving.dir.parentFile?.let { stack += Loc.Local(it) }
-        }
-        load(restoreScroll = scrollStates.remove(current?.key ?: ROOT_KEY))
-    }
+    // ---------- 行 ----------
 
     override fun onRowClick(position: Int) {
         when (val row = adapter.rows.getOrNull(position)) {
@@ -569,7 +312,7 @@ class FoldersFragment : BaseListFragment() {
                 when {
                     row.dir != null -> push(Loc.Local(row.dir))
                     id == ACTION_GRANT -> (activity as? MainActivity)?.requestStorageAccess()
-                    id == ACTION_ADD_SERVER -> NetworkDialogs.editServer(requireActivity(), null) { load() }
+                    id == ACTION_ADD_SERVER -> NetworkDialogs.editServer(requireActivity(), null) { reloadKeepingScroll() }
                     id == ACTION_OPEN_URL -> NetworkDialogs.openUrl(requireActivity())
                     id != null && id.startsWith("server:") -> ServerStore(requireContext()).get(id.removePrefix("server:"))
                         ?.let { push(Loc.Net(it.uri, it.name)) }
@@ -615,10 +358,7 @@ class FoldersFragment : BaseListFragment() {
                 }
                 play + listOf(
                     SheetItem(R.drawable.ic_edit, "表示名を変更") {
-                        PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name) { name ->
-                            FavoriteFolders(requireContext()).rename(uri, name)
-                            renderTop()
-                        }
+                        PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name) { name -> vm.renameFavorite(uri, name) }
                     },
                     SheetItem(R.drawable.ic_star_border, "お気に入りから外す") { toggleFavorite(uri, row.name) },
                 )
@@ -628,11 +368,11 @@ class FoldersFragment : BaseListFragment() {
                 val server = store.get(id.removePrefix("server:")) ?: return emptyList()
                 playNetItems(server.uri, server.name) + listOf(
                     favoriteItem(server.uri, server.name),
-                    SheetItem(R.drawable.ic_edit, "編集") { NetworkDialogs.editServer(requireActivity(), server) { load() } },
+                    SheetItem(R.drawable.ic_edit, "編集") { NetworkDialogs.editServer(requireActivity(), server) { reloadKeepingScroll() } },
                     SheetItem(R.drawable.ic_delete, "削除") {
                         PlaylistDialogs.confirm(requireContext(), "「${server.name}」の登録を削除しますか？", "削除") {
                             store.remove(server.id)
-                            load()
+                            reloadKeepingScroll()
                         }
                     },
                 )
@@ -642,9 +382,9 @@ class FoldersFragment : BaseListFragment() {
                 addAll(playNetItems(uri, row.name))
                 add(favoriteItem(uri, row.name))
                 // 見つかった共有フォルダを、ログイン情報付きで登録する
-                if (current == null && uri.scheme?.lowercase() in Server.PROTOCOLS.keys) {
+                if (vm.state.value.current == null && uri.scheme?.lowercase() in Server.PROTOCOLS.keys) {
                     add(SheetItem(R.drawable.ic_login, "ログイン情報を設定して登録") {
-                        NetworkDialogs.editServer(requireActivity(), null, uri) { load() }
+                        NetworkDialogs.editServer(requireActivity(), null, uri) { reloadKeepingScroll() }
                     })
                 }
             }
@@ -775,15 +515,5 @@ class FoldersFragment : BaseListFragment() {
                 action(media)
             }
         }
-    }
-
-    private companion object {
-        const val KEY_STACK = "stack"
-        const val ROOT_KEY = "<root>"
-        const val ACTION_GRANT = "action:grant"
-        const val ACTION_ADD_SERVER = "action:add_server"
-        const val ACTION_OPEN_URL = "action:open_url"
-        const val ROW_SEARCHING = "info:searching"
-        const val NET_TIMEOUT_MS = 20_000L
     }
 }
