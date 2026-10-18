@@ -1,6 +1,5 @@
 package com.ryose.videoplayer
 
-import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
@@ -9,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.drawable.Icon
-import android.view.ScaleGestureDetector
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -22,9 +20,6 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Rational
-import android.view.GestureDetector
-import android.view.HapticFeedbackConstants
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -60,13 +55,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /** 動画の再生画面。再生そのものは PlaybackService が担当し、この画面は表示と操作を受け持つ */
 class PlayerActivity : AppCompatActivity() {
-
-    private enum class Gesture { NONE, IGNORE, BRIGHTNESS, VOLUME, SEEK }
 
     /** ホームボタンなどで動画の画面を離れたときの動作 */
     private enum class LeaveAction(val label: String) {
@@ -95,6 +86,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var nowPlaying: NowPlayingViewModel
     /** DVD のメニュー用の十字キー（DvdPad.kt） */
     private lateinit var dvdPad: DvdPad
+    /** タップ・スワイプ・ダブルタップ・長押し・ピンチ（PlayerGestures.kt） */
+    private lateinit var gestures: PlayerGestures
     /** 字幕・音声・映像トラックのメニュー（TrackMenus.kt） */
     private lateinit var trackMenus: TrackMenus
     private lateinit var castButton: ImageButton
@@ -174,12 +167,6 @@ class PlayerActivity : AppCompatActivity() {
     /** 回転ボタンで固定した向き（null なら設定どおり） */
     private var manualOrientation: Int? = null
 
-    // ジェスチャー
-    private var gesture = Gesture.NONE
-    private var gestureStartValue = 0f
-    private var seekStartPos = 0L
-    private var seekTarget = 0L
-
     private val scales = listOf(
         MediaPlayer.ScaleType.SURFACE_BEST_FIT to "画面に合わせる",
         MediaPlayer.ScaleType.SURFACE_FIT_SCREEN to "画面いっぱい（端をカット）",
@@ -201,10 +188,6 @@ class PlayerActivity : AppCompatActivity() {
     }
     private val isTv by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) }
 
-    /** ピンチで拡大した倍率（1 で元どおり） */
-    private var zoom = 1f
-    private var pinching = false
-
     /** シークバーを動かしている間、映像も追いかけて動かす（間引いて移動） */
     private var lastPreviewSeek = 0L
 
@@ -214,9 +197,6 @@ class PlayerActivity : AppCompatActivity() {
     private val previewTarget = MutableStateFlow(-1L)
     /** 画像で見せている（このときは映像は動かさず、指を離したときに移動する） */
     private var previewImages = false
-
-    /** 長押しで 2 倍速にしている間の、元の速さ */
-    private var longPressRate: Float? = null
 
     private val pickSubtitle =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { addSubtitleFromUri(it) } }
@@ -269,20 +249,12 @@ class PlayerActivity : AppCompatActivity() {
     private var handedToPopup = false
 
     // 設定（画面を開くたびに読み直す）
-    private var gestureBrightness = true
-    private var gestureVolume = true
-    private var gestureSeek = true
-    private var gestureDoubleTap = true
-    private var gestureLongPress = true
+    /** 何秒か戻す・進むときの長さ（設定の「スキップする秒数」。リモコンの早送り・巻き戻し、OS の小窓のボタン） */
     private var doubleTapMs = 10_000L
 
     private fun readSettings() {
-        gestureBrightness = AppSettings.gestureBrightness(this)
-        gestureVolume = AppSettings.gestureVolume(this)
-        gestureSeek = AppSettings.gestureSeek(this)
-        gestureDoubleTap = AppSettings.gestureDoubleTap(this)
-        gestureLongPress = AppSettings.gestureLongPress(this)
         doubleTapMs = AppSettings.doubleTapMs(this)
+        gestures.readSettings()
     }
 
     // ---------- ライフサイクル ----------
@@ -369,7 +341,8 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         setupControls()
-        setupGestures()
+        gestures = PlayerGestures(this, touchLayer, videoLayout, gestureHost)
+        gestures.attach()
         setupInsets()
         updateTouchLayerDescription()
         if (savedInstanceState == null) takeLoadFrom(intent) else restoreIntent = intent
@@ -504,7 +477,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        endLongPressSpeed()
+        gestures.endLongPressSpeed()
         // 別の画面が前に出たら、そちらがダイアログを担当する
         svc?.let { it.setDialogCallbacks(null) }
     }
@@ -787,7 +760,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun cycleScale() {
         val s = svc ?: return
-        setZoom(1f)
+        gestures.resetZoom()
         scaleIndex = (scaleIndex + 1) % scales.size
         s.setVideoScale(scales[scaleIndex].first)
         showInfo(scales[scaleIndex].second)
@@ -1267,25 +1240,6 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- 長押しで 2 倍速 ----------
-
-    private fun startLongPressSpeed() {
-        val s = svc ?: return
-        longPressRate = s.rate
-        s.setPlaybackRate(2f)
-        touchLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        showInfo("2倍速で再生中", autoHide = false)
-    }
-
-    /** 指を離したら元の速さに戻す */
-    private fun endLongPressSpeed() {
-        val r = longPressRate ?: return
-        longPressRate = null
-        svc?.setPlaybackRate(r)
-        handler.removeCallbacks(hideInfo)
-        handler.post(hideInfo)
-    }
-
     private fun setupInsets() {
         val topPad = topBar.paddingTop
         val sidePad = topBar.paddingLeft
@@ -1602,7 +1556,7 @@ class PlayerActivity : AppCompatActivity() {
             pipReceiverRegistered = false
         }
         if (inPip) {
-            setZoom(1f)
+            gestures.resetZoom()
             hideControls()
             hideLoading()
             unlockButton.visibility = View.GONE
@@ -1615,153 +1569,26 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- ジェスチャー ----------
-    // タップ: コントロールの表示/非表示
-    // 左半分の上下スワイプ: 明るさ / 右半分の上下スワイプ: 音量 / 左右スワイプ: シーク
-    // ダブルタップ: 左=10秒戻る、右=10秒進む、中央=再生/一時停止
-    // 長押し: 押している間だけ 2 倍速
+    // ---------- ジェスチャー（PlayerGestures.kt） ----------
 
-    /** ピンチで拡大（1〜4 倍）。元に戻すときは指を縮めるか、画面サイズのボタン */
-    private fun setZoom(z: Float) {
-        zoom = z.coerceIn(1f, 4f)
-        videoLayout.scaleX = zoom
-        videoLayout.scaleY = zoom
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupGestures() {
-        val edge = 48 * resources.displayMetrics.density
-        val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-                pinching = true
-                gesture = Gesture.IGNORE
-                return true
-            }
-
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                setZoom(zoom * detector.scaleFactor)
-                showInfo(if (zoom <= 1.01f) "ズーム：元のサイズ" else "ズーム  %.1f 倍".format(zoom), autoHide = false)
-                return true
-            }
-
-            override fun onScaleEnd(detector: ScaleGestureDetector) {
-                if (zoom < 1.05f) setZoom(1f)
-                handler.removeCallbacks(hideInfo)
-                handler.postDelayed(hideInfo, 600)
-            }
-        })
-        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent) = true
-
-            // ダブルタップを使わない設定なら、ダブルタップ待ちをせずにすぐ反応する
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                if (!gestureDoubleTap) toggleControls()
-                return false
-            }
-
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (gestureDoubleTap) toggleControls()
-                return true
-            }
-
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                val s = svc ?: return true
-                if (!gestureDoubleTap) return false
-                val w = touchLayer.width
-                val sec = doubleTapMs / 1000
-                when {
-                    e.x < w / 3f -> { s.seekBy(-doubleTapMs); showInfo("${sec}秒戻る") }
-                    e.x > w * 2 / 3f -> { s.seekBy(doubleTapMs); showInfo("${sec}秒進む") }
-                    else -> s.togglePlay()
-                }
-                return true
-            }
-
-            override fun onLongPress(e: MotionEvent) {
-                val s = svc ?: return
-                if (!gestureLongPress || pinching || gesture != Gesture.NONE || !s.isPlaying) return
-                // 指を離すまで、ほかのジェスチャーは受け付けない
-                gesture = Gesture.IGNORE
-                startLongPressSpeed()
-            }
-
-            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
-                val s = svc ?: return false
-                if (e1 == null) return false
-                val dx = e2.x - e1.x
-                val dy = e2.y - e1.y
-                val w = touchLayer.width.toFloat()
-                val h = touchLayer.height.toFloat()
-                if (gesture == Gesture.NONE) {
-                    gesture = when {
-                        // 画面端はシステムのジェスチャーに譲る
-                        e1.y < edge || e1.y > h - edge -> Gesture.IGNORE
-                        abs(dy) > abs(dx) -> when {
-                            e1.x < w / 2f -> if (gestureBrightness) Gesture.BRIGHTNESS else Gesture.IGNORE
-                            else -> if (gestureVolume) Gesture.VOLUME else Gesture.IGNORE
-                        }
-                        else -> if (gestureSeek) Gesture.SEEK else Gesture.IGNORE
-                    }
-                    gestureStartValue = when (gesture) {
-                        Gesture.BRIGHTNESS -> currentBrightness()
-                        Gesture.VOLUME -> currentVolumePercent().toFloat()
-                        else -> 0f
-                    }
-                    seekStartPos = s.position
-                    seekTarget = seekStartPos
-                }
-                when (gesture) {
-                    Gesture.BRIGHTNESS -> {
-                        val v = (gestureStartValue - dy / h).coerceIn(0.01f, 1f)
-                        window.attributes = window.attributes.apply { screenBrightness = v }
-                        showInfo("明るさ ${(v * 100).roundToInt()}%", autoHide = false)
-                    }
-                    Gesture.VOLUME -> {
-                        // 画面の高さ 1.5 倍分で 0〜100%。ブーストがオンなら 200% まで
-                        val limit = if (AppSettings.audioBoost(this@PlayerActivity)) 200 else 100
-                        val v = (gestureStartValue - dy / h * 150).roundToInt().coerceIn(0, limit)
-                        applyVolumePercent(v)
-                        showInfo(volumeText(v), autoHide = false)
-                    }
-                    Gesture.SEEK -> if (lengthMs > 0) {
-                        val delta = (dx / w * 90_000).toLong()
-                        seekTarget = (seekStartPos + delta).coerceIn(0, lengthMs)
-                        val diff = (seekTarget - seekStartPos) / 1000
-                        val sign = if (diff >= 0) "+" else ""
-                        showInfo("${formatTime(seekTarget)} / ${formatTime(lengthMs)}\n($sign${diff}秒)", autoHide = false)
-                    }
-                    else -> {}
-                }
-                return true
-            }
-        })
-
-        // TalkBack などのユーザー補助から「クリック」されたとき（普通のタップは下の OnTouchListener が受け取るので、ここには来ない）
-        touchLayer.setOnClickListener {
-            if (locked) showUnlockBriefly() else toggleControls()
+    private val gestureHost = object : PlayerGestures.Host {
+        override val service: PlaybackService? get() = svc
+        override val locked: Boolean get() = this@PlayerActivity.locked
+        override val lengthMs: Long get() = this@PlayerActivity.lengthMs
+        override fun toggleControls() = this@PlayerActivity.toggleControls()
+        override fun showUnlockBriefly() = this@PlayerActivity.showUnlockBriefly()
+        override fun showInfo(text: String, autoHide: Boolean) = this@PlayerActivity.showInfo(text, autoHide)
+        override fun hideInfoLater(delayMs: Long) {
+            handler.removeCallbacks(hideInfo)
+            handler.postDelayed(hideInfo, delayMs)
         }
-        touchLayer.setOnTouchListener { _, e ->
-            if (locked) {
-                if (e.actionMasked == MotionEvent.ACTION_UP) showUnlockBriefly()
-                return@setOnTouchListener true
-            }
-            scaleDetector.onTouchEvent(e)
-            // 2 本指で拡大している間は、ほかのジェスチャーは受け付けない
-            if (!pinching && e.pointerCount == 1) detector.onTouchEvent(e)
-            val action = e.actionMasked
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) pinching = false
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                endLongPressSpeed()
-                val was = gesture
-                gesture = Gesture.NONE
-                if (was == Gesture.SEEK && action == MotionEvent.ACTION_UP) svc?.seekTo(seekTarget)
-                if (was != Gesture.NONE && was != Gesture.IGNORE) {
-                    handler.removeCallbacks(hideInfo)
-                    handler.postDelayed(hideInfo, 600)
-                }
-            }
-            true
+        override fun currentBrightness(): Float = this@PlayerActivity.currentBrightness()
+        override fun setBrightness(value: Float) {
+            window.attributes = window.attributes.apply { screenBrightness = value }
         }
+        override fun currentVolumePercent(): Int = this@PlayerActivity.currentVolumePercent()
+        override fun applyVolumePercent(percent: Int) = this@PlayerActivity.applyVolumePercent(percent)
+        override fun volumeText(percent: Int): String = this@PlayerActivity.volumeText(percent)
     }
 
     // 端末の明るさの最大値は Android の内部の値なので、R.integer では指せず名前で探すしかない

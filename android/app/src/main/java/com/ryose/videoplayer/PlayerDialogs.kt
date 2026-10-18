@@ -101,10 +101,7 @@ object PlayerDialogs {
 
     fun sleepLabel(svc: PlaybackService): String? = when {
         svc.sleepAtEnd -> "この曲・動画の終わりで停止"
-        svc.sleepAt > 0 -> {
-            val min = ((svc.sleepAt - System.currentTimeMillis()) / 60_000.0).let { kotlin.math.ceil(it).toInt() }
-            "あと ${min.coerceAtLeast(1)} 分で停止"
-        }
+        svc.sleepAt > 0 -> "あと ${SleepTimer.remainingMinutes(svc.sleepAt, System.currentTimeMillis())} 分で停止"
         else -> null
     }
 

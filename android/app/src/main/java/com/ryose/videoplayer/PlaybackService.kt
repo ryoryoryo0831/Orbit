@@ -164,11 +164,9 @@ class PlaybackService : Service() {
     var meta: TrackMeta? = null
         private set
     /** スリープタイマーで止める時刻（0 なら未設定） */
-    var sleepAt = 0L
-        private set
+    val sleepAt: Long get() = sleep.stopAt
     /** 今の曲・動画が終わったら止める */
-    var sleepAtEnd = false
-        private set
+    val sleepAtEnd: Boolean get() = sleep.atEnd
     /** 動画を裏で音声だけ再生している・一時停止している（映像を止めている）状態 */
     var videoTrackDisabled = false
         private set
@@ -336,7 +334,13 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         resume = ResumeStore(this)
-        abStore = AbStore(this)
+        abRepeat = AbRepeater(AbStore(this), object : AbRepeater.Host {
+            override val timeMs: Long get() = player.time.coerceAtLeast(0)
+            override val lengthMs: Long get() = this@PlaybackService.lengthMs
+            override val itemKey: String? get() = currentItem?.key
+            override fun seek(ms: Long) = player.setTime(ms)
+            override fun onChanged() = dispatch { it.onModesChanged() }
+        })
         history = HistoryStore(this)
         audioManager = getSystemService(AudioManager::class.java)
         repeat = runCatching { Repeat.valueOf(prefs().getString("repeat", null) ?: "OFF") }.getOrDefault(Repeat.OFF)
@@ -649,7 +653,7 @@ class PlaybackService : Service() {
         if (startIndex !in newItems.indices) return
         savePosition()
         autoAdvance = advance
-        sleepAtEnd = false
+        sleep.resetAtEnd()
         errorStreak = 0
         items = newItems
         index = startIndex
@@ -709,16 +713,8 @@ class PlaybackService : Service() {
         startedWithoutVideo = false
         errorHandled = false
         lastError = null
-        abA = -1
-        abB = -1
-        abRestoredMessage = null
-        // 前に A-B リピートをしていたファイルなら、その区間を戻す（区間の外から始まるときは A から）
-        abStore.get(item.key)?.let { (a, b) ->
-            abA = a
-            abB = b
-            if (preparingStart < a || preparingStart >= b) preparingStart = a
-            abRestoredMessage = "前回の A-B リピート（${formatTime(a)} 〜 ${formatTime(b)}）を戻しました"
-        }
+        // A-B リピートは解除する。前に A-B リピートをしていたファイルなら、その区間を戻す（区間の外から始まるときは A から）
+        preparingStart = abRepeat.onItemOpened(item.key, preparingStart)
 
         // 履歴は動画だけ（音楽を聴くと動画の履歴が押し出されてしまうので）
         if (!item.isAudio) scope.launch(Dispatchers.IO) { history.add(item) }
@@ -1104,10 +1100,8 @@ class PlaybackService : Service() {
         if (errorHandled) return
         if (expandSubItems()) return
         currentItem?.let { resume.clear(it.key) }
-        if (sleepAtEnd) {
+        if (sleep.consumeAtEnd()) {
             // スリープタイマー「この曲の終わりまで」
-            sleepAtEnd = false
-            dispatch { it.onModesChanged() }
             stopPlayback()
             return
         }
@@ -1209,100 +1203,29 @@ class PlaybackService : Service() {
         return hw
     }
 
-    // ---------- A-B リピート ----------
+    // ---------- A-B リピート（AbRepeater.kt） ----------
 
-    var abA = -1L
-        private set
-    var abB = -1L
-        private set
+    private lateinit var abRepeat: AbRepeater
 
-    private lateinit var abStore: AbStore
+    val abA: Long get() = abRepeat.range.a
+    val abB: Long get() = abRepeat.range.b
 
     /** ファイルを開いたときに、覚えていた A-B リピートを戻したお知らせ（画面が一度だけ受け取って出す） */
-    private var abRestoredMessage: String? = null
-
-    fun takeAbRestoredMessage(): String? = abRestoredMessage.also { abRestoredMessage = null }
-
-    /** 今の A・B を覚える（両方決まっているときだけ） */
-    private fun rememberAb() {
-        val key = currentItem?.key ?: return
-        if (abA >= 0 && abB > abA) abStore.save(key, abA, abB) else abStore.clear(key)
-    }
-
-    /** A と B の最小の間隔（ミリ秒） */
-    private val abMinGapMs = 500L
+    fun takeAbRestoredMessage(): String? = abRepeat.takeRestoredMessage()
 
     /** A を今の位置にする。B より後になったら B は外す。結果を文章で返す */
-    fun setAbA(): String {
-        val t = player.time.coerceAtLeast(0)
-        abA = t
-        val msg = if (abB >= 0 && abB <= t + abMinGapMs) {
-            abB = -1
-            "A を ${formatAbTime(t)} にしました（B は A より後にもう一度決めてください）"
-        } else if (abB > abA) {
-            "A を ${formatAbTime(t)} にしました"
-        } else {
-            "A を ${formatAbTime(t)} にしました。終わりの位置で B を押してください"
-        }
-        rememberAb()
-        dispatch { it.onModesChanged() }
-        return msg
-    }
+    fun setAbA(): String = abRepeat.setA()
 
     /** B を今の位置にして、A に戻ってくり返しを始める。A が無い・A より前なら設定しない。結果を文章で返す */
-    fun setAbB(): String {
-        val t = player.time.coerceAtLeast(0)
-        return when {
-            abA < 0 -> "先に、くり返しの始めの位置で A を押してください"
-            t <= abA + abMinGapMs -> "B は A（${formatAbTime(abA)}）より後の位置で押してください"
-            else -> {
-                abB = t
-                player.setTime(abA)
-                rememberAb()
-                dispatch { it.onModesChanged() }
-                "${formatAbTime(abA)} 〜 ${formatAbTime(t)} をくり返します"
-            }
-        }
-    }
+    fun setAbB(): String = abRepeat.setB()
 
-    /**
-     * A か B を少しずらす（[deltaMs] がマイナスなら前へ）。ずらしたところが聞けるように、
-     * A ならその位置から、B ならその 2 秒前から再生する。ずらせないときは null
-     */
-    fun nudgeAb(isA: Boolean, deltaMs: Long): String? {
-        val len = lengthMs.takeIf { it > 0 } ?: Long.MAX_VALUE
-        if (isA) {
-            if (abA < 0) return null
-            val max = if (abB >= 0) abB - abMinGapMs else len
-            val v = maxOf(0L, minOf(abA + deltaMs, max))
-            if (v == abA) return null
-            abA = v
-            player.setTime(abA)
-        } else {
-            if (abB < 0) return null
-            val v = maxOf(abA + abMinGapMs, minOf(abB + deltaMs, len))
-            if (v == abB) return null
-            abB = v
-            player.setTime(maxOf(abA, abB - 2000))
-        }
-        rememberAb()
-        dispatch { it.onModesChanged() }
-        return if (isA) "A：${formatAbTime(abA)}" else "B：${formatAbTime(abB)}"
-    }
+    /** A か B を少しずらす（[deltaMs] がマイナスなら前へ）。ずらせないときは null */
+    fun nudgeAb(isA: Boolean, deltaMs: Long): String? = abRepeat.nudge(isA, deltaMs)
 
-    fun clearAb() {
-        abA = -1
-        abB = -1
-        rememberAb()
-        dispatch { it.onModesChanged() }
-    }
+    fun clearAb() = abRepeat.clear()
 
     /** メニューのマス目に出す短い表示（「1:23〜2:45」「A 1:23」）。使っていなければ null */
-    fun abLabel(): String? = when {
-        abA >= 0 && abB > abA -> "${formatTime(abA)}〜${formatTime(abB)}"
-        abA >= 0 -> "A ${formatTime(abA)}"
-        else -> null
-    }
+    fun abLabel(): String? = abRepeat.label()
 
     // ---------- 音量（100% を超えるブースト） ----------
 
@@ -1390,33 +1313,15 @@ class PlaybackService : Service() {
     /** 再生画面のメニューから字幕を選ぶ（-1 でオフ） */
     fun selectSpuTrack(id: Int) = tracks.selectSpu(currentItem?.key, id)
 
-    // ---------- スリープタイマー ----------
+    // ---------- スリープタイマー（SleepTimer.kt） ----------
 
-    private val sleepTask = Runnable {
-        sleepAt = 0
-        pause()
-        dispatch { it.onModesChanged() }
-    }
+    private val sleep = SleepTimer(handler, onExpired = { pause() }, onChanged = { dispatch { it.onModesChanged() } })
 
-    fun setSleepTimer(minutes: Int) {
-        cancelSleepTimer()
-        sleepAt = System.currentTimeMillis() + minutes * 60_000L
-        handler.postDelayed(sleepTask, minutes * 60_000L)
-        dispatch { it.onModesChanged() }
-    }
+    fun setSleepTimer(minutes: Int) = sleep.set(minutes)
 
-    fun setSleepAtEnd() {
-        cancelSleepTimer()
-        sleepAtEnd = true
-        dispatch { it.onModesChanged() }
-    }
+    fun setSleepAtEnd() = sleep.setAtEnd()
 
-    fun cancelSleepTimer() {
-        handler.removeCallbacks(sleepTask)
-        sleepAt = 0
-        sleepAtEnd = false
-        dispatch { it.onModesChanged() }
-    }
+    fun cancelSleepTimer() = sleep.cancel()
 
     // ---------- イコライザー ----------
 
@@ -1486,7 +1391,7 @@ class PlaybackService : Service() {
             MediaPlayer.Event.TimeChanged -> {
                 if (lengthMs <= 0) setLength(player.length)
                 // A-B リピート：B を過ぎたら A に戻る
-                if (abA >= 0 && abB > abA && e.timeChanged >= abB) player.setTime(abA)
+                abRepeat.onTime(e.timeChanged)
                 dispatch(e.timeChanged) { it.onPlayerEvent(e) }
                 return
             }
