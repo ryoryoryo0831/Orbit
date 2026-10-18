@@ -347,7 +347,10 @@ class PlaybackService : Service() {
         audioManager = getSystemService(AudioManager::class.java)
         repeat = runCatching { Repeat.valueOf(prefs().getString("repeat", null) ?: "OFF") }.getOrDefault(Repeat.OFF)
 
+        // 重さを確かめるため、VLC の本体の用意にかかった時間を記録に残す（起動時に裏で作り終えていれば短い）
+        val engineStarted = android.os.SystemClock.elapsedRealtime()
         createEngine()
+        PlaybackLog.add("再生サービスを起動（VLC の用意 ${android.os.SystemClock.elapsedRealtime() - engineStarted} ms）")
 
         session = MediaSessionCompat(this, "VideoPlayer").apply {
             setCallback(object : MediaSessionCompat.Callback() {

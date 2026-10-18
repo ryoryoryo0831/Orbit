@@ -17,7 +17,16 @@ object Secrets {
     private const val KEY_ALIAS = "videoplayer_secrets"
     private const val PREFIX = "enc1:"
 
+    /** 一度取り出した鍵（鍵保管庫を開くのは重いので、暗号化・復号のたびに開かない） */
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     private fun key(): SecretKey {
+        cachedKey?.let { return it }
+        return synchronized(this) { cachedKey ?: loadKey().also { cachedKey = it } }
+    }
+
+    private fun loadKey(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")

@@ -95,26 +95,56 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
     /** 今読み込んでいるネットワークのフォルダの中身 */
     private val netRows = mutableListOf<Row>()
 
+    /** ネットワークのフォルダの中身を読む MediaBrowser */
     private var browser: MediaBrowser? = null
+    /** browser が読んでいる場所（タブを離れて戻ってきたとき、読み込みの途中から続けるため） */
+    private var browsingLoc: Loc.Net? = null
+    /** 機器を自動で探す MediaBrowser（閲覧とは別。フォルダに入っても止めない） */
+    private var discoveryBrowser: MediaBrowser? = null
+    /** 止めた MediaBrowser から遅れて届いた知らせを捨てるための番号 */
+    private var browseGen = 0
+    private var discoveryGen = 0
     private var multicastLock: WifiManager.MulticastLock? = null
     private var loadJob: Job? = null
     private var renderNetJob: Job? = null
+    private var renderSortJob: Job? = null
     private var netTimeoutJob: Job? = null
-    /** 画面に表示されている（他のタブを見ている間は、ネットワークの閲覧・検出を止める） */
+    /** 他のタブを見ている間、少しして検出・閲覧を止める */
+    private var hideStopJob: Job? = null
+    /** 画面に表示されている */
     private var visible = false
+
+    /** 今いる場所がネットワークのフォルダか（ログインの確認を出せるようになるまで待つ必要がある） */
+    val inNetwork: Boolean get() = current is Loc.Net
 
     // ---------- 画面から ----------
 
     /** 画面が表示された（タブを開いた・戻ってきた）：今の場所を読み込み直す */
     fun onVisible() {
         visible = true
+        hideStopJob?.cancel()
+        // 読み込みの途中でタブを離れていた（動画を再生した、など）：止めていないので、続きから表示する
+        val loc = current
+        if (loc is Loc.Net && browsingLoc == loc && browser != null) {
+            renderNet(loc, finished = false)
+            return
+        }
         load()
     }
 
-    /** 画面が隠れた：ネットワークの閲覧・検出を止める */
+    /**
+     * 画面が隠れた：ネットワークの閲覧・検出は少しして止める。
+     * すぐ止めると、タブを行き来するたび・動画を再生するたびに、止める・作り直す処理（UPnP・mDNS の終了待ちなど）で画面が止まっていた
+     */
     fun onHidden() {
         visible = false
-        stopBrowser()
+        hideStopJob?.cancel()
+        hideStopJob = viewModelScope.launch {
+            delay(HIDDEN_STOP_MS)
+            if (visible) return@launch
+            stopBrowser()
+            stopDiscovery()
+        }
     }
 
     /** 今の場所を読み込み直す（ファイルの名前を変えた・サーバーを登録したなど） */
@@ -330,13 +360,16 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
 
     /** 同じネットワーク上の DLNA サーバーや共有フォルダを自動で探す */
     private fun startDiscovery() {
-        if (!visible) return
+        if (!visible || discoveryBrowser != null) return
         viewModelScope.launch {
             val libVLC = engine()
-            if (!visible || current != null || browser != null) return@launch
+            if (!visible || current != null || discoveryBrowser != null) return@launch
             acquireMulticast()
-            browser = MediaBrowser(libVLC, object : MediaBrowser.EventListener {
+            val gen = ++discoveryGen
+            val started = android.os.SystemClock.elapsedRealtime()
+            discoveryBrowser = MediaBrowser(libVLC, object : MediaBrowser.EventListener {
                 override fun onMediaAdded(index: Int, media: IMedia) {
+                    if (gen != discoveryGen) return
                     val uri = media.uri ?: return
                     val title = media.getMeta(IMedia.Meta.Title)?.takeIf { it.isNotBlank() } ?: uri.host ?: uri.toString()
                     discovered[uri.toString()] = Row.Folder(title, kindLabel(uri), R.drawable.ic_lan, id = "net:$uri")
@@ -344,13 +377,26 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
                 }
 
                 override fun onMediaRemoved(index: Int, media: IMedia) {
+                    // 止めたときに届く「消えた」は無視する（戻ってきたときに一覧が空にならないように）
+                    if (gen != discoveryGen) return
                     media.uri?.let { discovered.remove(it.toString()) }
                     renderTop()
                 }
 
                 override fun onBrowseEnd() {}
             }).also { it.discoverNetworkShares() }
+            PlaybackLog.add("ネットワークの機器を探し始める（${android.os.SystemClock.elapsedRealtime() - started} ms）")
         }
+    }
+
+    private fun stopDiscovery() {
+        val b = discoveryBrowser ?: return
+        discoveryGen++
+        discoveryBrowser = null
+        val started = android.os.SystemClock.elapsedRealtime()
+        b.release()
+        PlaybackLog.add("ネットワークの機器を探すのをやめる（${android.os.SystemClock.elapsedRealtime() - started} ms）")
+        if (browser == null) releaseMulticast()
     }
 
     fun kindLabel(uri: Uri) = when (uri.scheme?.lowercase()) {
@@ -387,8 +433,12 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
         loadJob = viewModelScope.launch {
             val libVLC = engine()
             if (current != loc || !visible) return@launch
+            val gen = ++browseGen
+            browsingLoc = loc
+            acquireMulticast()
             browser = MediaBrowser(libVLC, object : MediaBrowser.EventListener {
                 override fun onMediaAdded(index: Int, media: IMedia) {
+                    if (gen != browseGen) return
                     val uri = media.uri ?: return
                     val name = media.getMeta(IMedia.Meta.Title)?.takeIf { it.isNotBlank() }
                         ?: Uri.decode(uri.lastPathSegment ?: uri.toString())
@@ -397,17 +447,20 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
                     } else {
                         Row.Media(PlaylistItem(uri, name, durationMs = media.duration.coerceAtLeast(0)), "")
                     }
-                    // まとめて表示を更新する
-                    renderNetJob?.cancel()
-                    renderNetJob = viewModelScope.launch {
-                        delay(150)
-                        renderNet(loc, finished = false)
+                    // まとめて表示を更新する（届くたびに全部を並べ替えないように、間をあける）
+                    if (renderNetJob?.isActive != true) {
+                        renderNetJob = viewModelScope.launch {
+                            delay(400)
+                            renderNet(loc, finished = false)
+                        }
                     }
                 }
 
                 override fun onMediaRemoved(index: Int, media: IMedia) {}
 
                 override fun onBrowseEnd() {
+                    if (gen != browseGen) return
+                    browsingLoc = null
                     netTimeoutJob?.cancel()
                     renderNetJob?.cancel()
                     renderNet(loc, finished = true)
@@ -423,13 +476,21 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
 
     private fun renderNet(loc: Loc.Net, finished: Boolean) {
         if (current != loc) return
-        // フォルダを先に、それぞれ名前順
-        val sorted = netRows.filterIsInstance<Row.Folder>().sortedWith(compareBy(NaturalOrder) { it.name }) +
-            netRows.filterIsInstance<Row.Media>().sortedWith(compareBy(NaturalOrder) { it.item.title })
-        if (sorted.isEmpty() && !finished) return
-        showNet(sorted, finished)
-        // 最後まで読めた中身は覚えておく（空のときは接続の失敗かもしれないので覚えない）
-        if (finished && sorted.isNotEmpty()) netCache[loc.key] = sorted
+        val snapshot = netRows.toList()
+        // 並べ替えは裏で（数千件あると、画面の処理が止まっていた）。前の並べ替えは捨てる
+        renderSortJob?.cancel()
+        renderSortJob = viewModelScope.launch {
+            // フォルダを先に、それぞれ名前順
+            val sorted = withContext(Dispatchers.Default) {
+                snapshot.filterIsInstance<Row.Folder>().sortedWith(compareBy(NaturalOrder) { it.name }) +
+                    snapshot.filterIsInstance<Row.Media>().sortedWith(compareBy(NaturalOrder) { it.item.title })
+            }
+            if (current != loc) return@launch
+            if (sorted.isEmpty() && !finished) return@launch
+            showNet(sorted, finished)
+            // 最後まで読めた中身は覚えておく（空のときは接続の失敗かもしれないので覚えない）
+            if (finished && sorted.isNotEmpty()) netCache[loc.key] = sorted
+        }
     }
 
     private fun showNet(rows: List<Row>, finished: Boolean) {
@@ -444,10 +505,13 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
 
     private fun stopBrowser() {
         renderNetJob?.cancel()
+        renderSortJob?.cancel()
         netTimeoutJob?.cancel()
+        browseGen++
+        browsingLoc = null
         browser?.release()
         browser = null
-        releaseMulticast()
+        if (discoveryBrowser == null) releaseMulticast()
     }
 
     /** 機器の自動検出（mDNS・SSDP）には Wi-Fi のマルチキャスト受信を有効にする必要がある */
@@ -468,11 +532,15 @@ class FoldersViewModel(app: Application, private val saved: SavedStateHandle) : 
     }
 
     override fun onCleared() {
+        hideStopJob?.cancel()
         stopBrowser()
+        stopDiscovery()
     }
 
     companion object {
         const val ROOT_KEY = "<root>"
+        /** 他のタブを見ている間、これだけたったらネットワークの検出・閲覧を止める */
+        const val HIDDEN_STOP_MS = 60_000L
         const val ACTION_GRANT = "action:grant"
         const val ACTION_ADD_SERVER = "action:add_server"
         const val ACTION_OPEN_URL = "action:open_url"

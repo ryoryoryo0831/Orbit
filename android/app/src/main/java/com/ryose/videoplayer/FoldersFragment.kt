@@ -101,12 +101,10 @@ class FoldersFragment : BaseListFragment() {
         // 読み込み直す（ネットワークのフォルダは覚えておいた中身を出すので、待たされない。
         // 行が同じならスクロール位置もそのまま）。ログインの確認を出せるよう、再生サービスにつながってから
         val s = svc
-        if (s != null) {
-            s.setDialogCallbacks(dialogHandler)
-            vm.onVisible()
-        } else {
-            visiblePending = true
-        }
+        s?.setDialogCallbacks(dialogHandler)
+        // 再生サービスを待つのは、ログインの確認を出すかもしれないネットワークのフォルダだけ
+        // （トップ・端末内・お気に入りは待たずに出す。初めて開いたとき、サービスの起動を待って遅れていた）
+        if (s != null || !vm.inNetwork) vm.onVisible() else visiblePending = true
     }
 
     override fun onPause() {

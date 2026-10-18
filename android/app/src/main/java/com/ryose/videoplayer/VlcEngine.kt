@@ -24,10 +24,15 @@ object VlcEngine {
      * サムネイル作り専用の LibVLC（VlcThumbnailer）。ダイアログ（エラーのお知らせ・ログインの確認）を受け取らないので、
      * 読めないファイルがあっても、一覧を見ているだけでエラーが表示されることはない。設定が変わっても作り直さない
      */
-    fun forThumbnails(context: Context): LibVLC = synchronized(lock) {
-        thumbnailInstance ?: LibVLC(context.applicationContext, ArrayList(AppSettings.BASE_VLC_OPTIONS + "--no-audio"))
-            .also { thumbnailInstance = it }
+    fun forThumbnails(context: Context): LibVLC = synchronized(thumbnailLock) {
+        // 再生用とは別の鍵にする（サムネイル用を作っている間、再生サービスの起動が待たされないように）。
+        // 1 コマ取り出すだけなので、デコードは 1 本のスレッドで（一覧を出す処理・再生と CPU を取り合わないように）
+        thumbnailInstance ?: LibVLC(
+            context.applicationContext, ArrayList(AppSettings.BASE_VLC_OPTIONS + "--no-audio" + "--avcodec-threads=1"),
+        ).also { thumbnailInstance = it }
     }
+
+    private val thumbnailLock = Any()
 
     /**
      * 今ある LibVLC を返す（無ければ今の設定で作る）。作り直しはしない

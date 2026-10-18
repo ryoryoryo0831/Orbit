@@ -42,8 +42,9 @@ class App : Application(), ImageLoaderFactory {
         // 再生の記録（設定の「再生の記録」で見られる）
         PlaybackLog.init(this)
         AppSettings.applyTheme(this)
-        // 古いデータの片付け（起動を遅くしないように裏で）
+        // 古いデータの片付け（起動を遅くしないように裏で。最初の一覧を出す・VLC を用意するのと CPU を取り合わないよう、少し後で）
         CoroutineScope(Dispatchers.IO).launch {
+            kotlinx.coroutines.delay(8_000)
             runCatching { ThumbCache.trim(this@App) }
             runCatching { ResumeStore(this@App).prune() }
         }
@@ -168,12 +169,29 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         val VLC_DISPATCHER = Dispatchers.IO.limitedParallelism(1)
     }
 
-    /** Android が作っておいたサムネイル（MediaStore の動画なら速い） */
+    /**
+     * Android が作っておいたサムネイル（MediaStore の動画なら速い）。
+     * 「フォルダ」タブの行はファイルの場所（file://）なので、MediaStore に登録されていればその番号を引いて使う
+     * （以前は毎回、動画を開いて 1 コマ取り出していた）
+     */
     private fun systemThumbnail(context: Context): Bitmap? {
         if (Build.VERSION.SDK_INT < 29) return null
-        if (data.uri.scheme != ContentResolver.SCHEME_CONTENT || data.uri.authority != MediaStore.AUTHORITY) return null
-        return runCatching { context.contentResolver.loadThumbnail(data.uri, Size(512, 512), null) }.getOrNull()
+        val uri = when {
+            data.uri.scheme == ContentResolver.SCHEME_CONTENT && data.uri.authority == MediaStore.AUTHORITY -> data.uri
+            data.path != null -> mediaStoreUriOf(context, data.path)
+            else -> null
+        } ?: return null
+        return runCatching { context.contentResolver.loadThumbnail(uri, Size(512, 512), null) }.getOrNull()
     }
+
+    /** ファイルの場所から、MediaStore の動画の番号（content://）を引く。登録されていなければ null */
+    @Suppress("DEPRECATION")
+    private fun mediaStoreUriOf(context: Context, path: String): android.net.Uri? = runCatching {
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        context.contentResolver.query(
+            collection, arrayOf(MediaStore.Video.Media._ID), "${MediaStore.Video.Media.DATA} = ?", arrayOf(path), null,
+        )?.use { c -> if (c.moveToFirst()) android.content.ContentUris.withAppendedId(collection, c.getLong(0)) else null }
+    }.getOrNull()
 
     /** 動画の 1 秒あたりの場面を取り出す */
     private fun frameFromVideo(context: Context): Bitmap? {

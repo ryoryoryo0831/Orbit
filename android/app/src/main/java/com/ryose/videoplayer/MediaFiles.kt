@@ -253,7 +253,7 @@ object MediaFiles {
 
     /** 端末内のすべての動画（MediaStore から） */
     @Suppress("DEPRECATION")
-    fun queryAllVideos(context: Context): List<Video> {
+    fun queryAllVideos(context: Context, includeDiscImages: Boolean = true): List<Video> {
         val collection: Uri =
             if (Build.VERSION.SDK_INT >= 29) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -291,8 +291,16 @@ object MediaFiles {
         } catch (_: Exception) {
         }
         // ISO（DVD・Blu-ray のディスクイメージ）は動画として登録されないので、ファイルの一覧から探して加える
-        result += queryDiscImages(context).filter { iso -> result.none { it.path == iso.path } }
+        if (includeDiscImages) result += discImagesNotIn(context, result)
         return result
+    }
+
+    /**
+     * [videos] に入っていない ISO。端末の全ファイルから探すので時間がかかる（「動画」タブは、動画の一覧を先に出してから足す）
+     */
+    fun discImagesNotIn(context: Context, videos: List<Video>): List<Video> {
+        val known = videos.mapNotNullTo(HashSet()) { it.path }
+        return queryDiscImages(context).filter { it.path !in known }
     }
 
     /**

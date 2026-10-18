@@ -24,11 +24,17 @@ import java.io.File
 
 /** 端末内の動画（データの層）。MediaStore から読み、以前の版で保存した「続きから再生」の位置を引き継ぐ */
 class VideoRepository(private val context: Context) {
-    suspend fun all(): List<Video> = withContext(Dispatchers.IO) {
+    /** 動画（ISO は入れない。すぐ出せるように） */
+    suspend fun videos(): List<Video> = withContext(Dispatchers.IO) {
         val resume = ResumeStore(context)
-        MediaFiles.queryAllVideos(context).also { videos ->
+        MediaFiles.queryAllVideos(context, includeDiscImages = false).also { videos ->
             videos.forEach { v -> v.path?.let { resume.migrate(v.uri.toString(), it) } }
         }
+    }
+
+    /** [videos] に入っていない ISO（端末の全ファイルから探すので時間がかかる） */
+    suspend fun discImages(videos: List<Video>): List<Video> = withContext(Dispatchers.IO) {
+        MediaFiles.discImagesNotIn(context, videos)
     }
 }
 
@@ -110,7 +116,18 @@ class VideosViewModel(app: Application, private val saved: SavedStateHandle) : A
         access.value = Access(has, has && isLimitedAccess(context))
         if (!has) return
         loadJob?.cancel()
-        loadJob = viewModelScope.launch { videos.value = repository.all() }
+        loadJob = viewModelScope.launch {
+            // 動画を先に出し、ISO はあとから足す（ISO を探すのは端末の全ファイルを調べるので、一覧が出るのが遅れていた）
+            val started = android.os.SystemClock.elapsedRealtime()
+            val list = repository.videos()
+            videos.value = list
+            val listed = android.os.SystemClock.elapsedRealtime()
+            val discs = repository.discImages(list)
+            if (discs.isNotEmpty()) videos.value = list + discs
+            PlaybackLog.add(
+                "「動画」タブを読み込む：動画 ${list.size} 本 ${listed - started} ms、ISO ${discs.size} 本 ${android.os.SystemClock.elapsedRealtime() - listed} ms",
+            )
+        }
     }
 
     fun setQuery(q: String) {
