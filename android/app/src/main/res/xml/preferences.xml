@@ -222,6 +222,12 @@
             app:key="update_check"
             app:summary="アプリを開いたときに（12 時間に 1 回まで）確かめて、新しい版があれば知らせます"
             app:title="新しい版を知らせる" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"
+            app:key="update_prerelease"
+            app:summary="公開したばかりで、まだみんなには配っていない版も知らせます（試す人の端末だけオンに）"
+            app:title="お試し版も受け取る" />
         <Preference
             app:iconSpaceReserved="false"
             app:selectable="false"

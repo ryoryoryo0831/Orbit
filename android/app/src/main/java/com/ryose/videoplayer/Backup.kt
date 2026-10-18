@@ -41,6 +41,8 @@ object Backup {
     /** この端末だけの値（書き出さない・読み込まない） */
     private val SKIP_KEYS = setOf(
         "update_checked_at", "notification_permission_asked", "popup_permission_asked", "tv_hw_decode_restored",
+        // お試し版を受け取るのは試す人の端末だけ（スマホから書き出してテレビに読み込んでも、テレビはお試し版にしない）
+        "update_prerelease",
         // 自由な小窓の場所・大きさは画面の大きさで変わる（大きさの違う端末に移すと画面の外に出ることがある）
         "popup_x", "popup_y", "popup_size",
     )

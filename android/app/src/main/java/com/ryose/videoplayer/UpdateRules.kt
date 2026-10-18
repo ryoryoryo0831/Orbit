@@ -3,14 +3,26 @@ package com.ryose.videoplayer
 /**
  * 新しい版があるかの決め方（AppUpdater から分けた。Android に依存しないので単体テストで確かめられる：UpdateRulesTest）。
  * 公開版は GitHub の Releases に、タグ「build-N」、APK「Orbit-1.0.N.apk」（64 ビット）・「Orbit-1.0.N-32bit.apk」で置いてある。
- * N はアプリの versionCode と同じ（.github/workflows/android.yml）
+ * N はアプリの versionCode と同じ（.github/workflows/android.yml）。
+ * 公開したばかりの版は「お試し版」（プレリリース）で、確かめてから latest にする（promote.yml）。
+ * ふつうの端末は latest だけ、設定「お試し版も受け取る」の端末はお試し版も知らせる
  */
 object UpdateRules {
     /** Releases の添付ファイル */
     data class Asset(val name: String, val url: String, val size: Long)
 
-    /** 入れられる新しい版 */
-    data class Update(val versionCode: Int, val versionName: String, val apkName: String, val apkUrl: String, val apkSize: Long)
+    /** Releases の 1 つ（お試し版も調べるときは一覧で受け取る） */
+    data class Release(val tag: String, val prerelease: Boolean, val draft: Boolean, val assets: List<Asset>)
+
+    /** 入れられる新しい版。[prerelease] はお試し版（まだみんなには配っていない版）か */
+    data class Update(
+        val versionCode: Int,
+        val versionName: String,
+        val apkName: String,
+        val apkUrl: String,
+        val apkSize: Long,
+        val prerelease: Boolean = false,
+    )
 
     /** タグ「build-129」から版の番号（129）。Android 版のタグでなければ null（iPhone 版は「ios-build-N」） */
     fun versionCodeOf(tag: String): Int? = if (tag.startsWith("build-")) tag.removePrefix("build-").toIntOrNull() else null
@@ -26,6 +38,16 @@ object UpdateRules {
         val asset = assets.find { it.name == want } ?: return null
         return Update(code, name, asset.name, asset.url, asset.size)
     }
+
+    /**
+     * Releases の一覧から、この端末に合ういちばん新しい版を選ぶ。下書きは飛ばし、
+     * [includePrerelease] が false ならお試し版も飛ばす。iPhone 版や APK の無い版は数えない
+     */
+    fun newest(releases: List<Release>, includePrerelease: Boolean, is64Bit: Boolean): Update? =
+        releases.asSequence()
+            .filter { !it.draft && (includePrerelease || !it.prerelease) }
+            .mapNotNull { r -> pick(r.tag, r.assets, is64Bit)?.copy(prerelease = r.prerelease) }
+            .maxByOrNull { it.versionCode }
 
     /** 今の版（[currentVersionCode]）より新しいか */
     fun isNewer(update: Update, currentVersionCode: Long): Boolean = update.versionCode > currentVersionCode

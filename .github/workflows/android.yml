@@ -69,8 +69,10 @@ jobs:
           name: Orbit-apk
           path: Orbit-*.apk
 
-      # 公開は main だけ。作業用ブランチではビルドの確認だけ行う
-      - name: リリースとして公開
+      # 公開は main だけ。作業用ブランチではビルドの確認だけ行う。
+      # まず「お試し版」（プレリリース）として出し、latest は変えない（アプリの「新しい版を知らせる」は latest を見るので、
+      # 家族の端末には届かない）。確かめたら promote.yml（「みんなに配る」）で latest にする
+      - name: お試し版として公開
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -80,4 +82,5 @@ jobs:
             スマホでこのページを開き、下の **Orbit-1.0.${{ github.run_number }}.apk** をタップしてインストールしてください。
             （`-32bit` 付きは古い機種向けです。普通のAPKが「インストールできない」と出たときだけ使ってください）
           files: Orbit-*.apk
-          make_latest: true
+          prerelease: true
+          make_latest: false

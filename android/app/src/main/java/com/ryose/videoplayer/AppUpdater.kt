@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -27,12 +28,16 @@ import java.net.URL
 
 /**
  * 新しい版の知らせと更新（ストアに出さないので、GitHub の Releases の最新版を見に行く）。
+ * ふつうは latest（確かめてからみんなに配った版）だけ、設定「お試し版も受け取る」ならお試し版（プレリリース）も。
  * 起動したとき（12 時間に 1 回まで）と、設定の「アップデートを確認」から確かめる。
  * 「更新する」でこの端末に合う APK（テレビは 32 ビット版）をダウンロードし、Android のインストールの画面を出す。
  * 同じ鍵で署名してあるので上書きでき、お気に入りや設定は消えない。どの版にするかの判断は UpdateRules
  */
 object AppUpdater {
     private const val LATEST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases/latest"
+
+    /** お試し版も調べるときの一覧（新しい順。iPhone 版も混ざるが、お試し版は直近にあるので 30 件で足りる） */
+    private const val LIST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases?per_page=30"
 
     /** 起動したとき：12 時間に 1 回まで確かめ、新しい版があれば知らせる（無ければ何も出さない） */
     fun checkOnStart(activity: AppCompatActivity) {
@@ -41,7 +46,7 @@ object AppUpdater {
         if (!UpdateRules.shouldCheck(AppSettings.updateCheckedAt(activity), now)) return
         activity.lifecycleScope.launch {
             val update = try {
-                fetchLatest()
+                fetchLatest(AppSettings.updateIncludePrerelease(activity))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -57,9 +62,10 @@ object AppUpdater {
     fun checkNow(activity: AppCompatActivity) {
         AppSettings.setUpdateCheckedAt(activity, System.currentTimeMillis())
         Toast.makeText(activity, "新しい版を確かめています…", Toast.LENGTH_SHORT).show()
+        val includePrerelease = AppSettings.updateIncludePrerelease(activity)
         activity.lifecycleScope.launch {
             val result = try {
-                Result.success(fetchLatest())
+                Result.success(fetchLatest(includePrerelease))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -71,7 +77,10 @@ object AppUpdater {
                 result.isFailure -> message(activity, "確かめられませんでした", "インターネットにつながっているか確かめてください。\n（${result.exceptionOrNull()?.message.orEmpty()}）")
                 update == null -> message(activity, "確かめられませんでした", "この端末に合う版が見つかりませんでした。")
                 UpdateRules.isNewer(update, currentVersionCode(activity)) -> offer(activity, update)
-                else -> message(activity, "最新の版です", "今の版（${versionName(activity)}）がいちばん新しい版です。")
+                else -> message(
+                    activity, "最新の版です",
+                    "今の版（${versionName(activity)}）がいちばん新しい版です。" + if (includePrerelease) "（お試し版も含めて）" else "",
+                )
             }
         }
     }
@@ -92,9 +101,24 @@ object AppUpdater {
     /** アプリが 64 ビットで動いているか（テレビは CPU が 64 ビットでも 32 ビット版で動いている） */
     private fun is64Bit(): Boolean = android.os.Process.is64Bit()
 
-    /** GitHub の最新の公開版を調べる（裏で） */
-    private suspend fun fetchLatest(): UpdateRules.Update? = withContext(Dispatchers.IO) {
-        val conn = (URL(LATEST_URL).openConnection() as HttpURLConnection).apply {
+    /** GitHub のいちばん新しい版を調べる（裏で）。[includePrerelease] ならお試し版も */
+    private suspend fun fetchLatest(includePrerelease: Boolean): UpdateRules.Update? = withContext(Dispatchers.IO) {
+        if (includePrerelease) {
+            val arr = JSONArray(getJson(LIST_URL))
+            val releases = (0 until arr.length()).map { i ->
+                val r = arr.getJSONObject(i)
+                UpdateRules.Release(r.optString("tag_name"), r.optBoolean("prerelease"), r.optBoolean("draft"), assetsOf(r))
+            }
+            UpdateRules.newest(releases, includePrerelease = true, is64Bit = is64Bit())
+        } else {
+            // latest はお試し版にならない（GitHub がそう決めている）
+            val json = JSONObject(getJson(LATEST_URL))
+            UpdateRules.pick(json.optString("tag_name"), assetsOf(json), is64Bit())
+        }
+    }
+
+    private fun getJson(url: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 10_000
             setRequestProperty("Accept", "application/vnd.github+json")
@@ -102,15 +126,17 @@ object AppUpdater {
         }
         try {
             if (conn.responseCode != 200) throw IllegalStateException("GitHub の返事 ${conn.responseCode}")
-            val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val arr = json.optJSONArray("assets")
-            val assets = (0 until (arr?.length() ?: 0)).map { i ->
-                val a = arr!!.getJSONObject(i)
-                UpdateRules.Asset(a.optString("name"), a.optString("browser_download_url"), a.optLong("size"))
-            }
-            UpdateRules.pick(json.optString("tag_name"), assets, is64Bit())
+            return conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
             conn.disconnect()
+        }
+    }
+
+    private fun assetsOf(release: JSONObject): List<UpdateRules.Asset> {
+        val arr = release.optJSONArray("assets") ?: return emptyList()
+        return (0 until arr.length()).map { i ->
+            val a = arr.getJSONObject(i)
+            UpdateRules.Asset(a.optString("name"), a.optString("browser_download_url"), a.optLong("size"))
         }
     }
 
@@ -122,9 +148,10 @@ object AppUpdater {
     private fun offer(activity: AppCompatActivity, update: UpdateRules.Update) {
         val mb = update.apkSize / (1024 * 1024)
         MaterialAlertDialogBuilder(activity)
-            .setTitle("新しい版があります")
+            .setTitle(if (update.prerelease) "新しいお試し版があります" else "新しい版があります")
             .setMessage(
-                "Orbit ${update.versionName} を入れられます（今の版：${versionName(activity)}）。\n\n" +
+                "Orbit ${update.versionName}${if (update.prerelease) "（お試し版）" else ""} を入れられます（今の版：${versionName(activity)}）。\n\n" +
+                    (if (update.prerelease) "まだみんなには配っていない版です。\n" else "") +
                     "ダウンロードは約 $mb MB です。お気に入りや設定はそのまま残ります。",
             )
             .setPositiveButton("更新する") { _, _ -> download(activity, update) }

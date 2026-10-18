@@ -34,6 +34,38 @@ class UpdateRulesTest {
         assertNull(UpdateRules.pick("build-130", assets, is64Bit = true))
     }
 
+    private fun release(code: Int, prerelease: Boolean, draft: Boolean = false) = UpdateRules.Release(
+        "build-$code", prerelease, draft,
+        listOf(Asset("Orbit-1.0.$code-32bit.apk", "https://example/$code/32", 1), Asset("Orbit-1.0.$code.apk", "https://example/$code/64", 2)),
+    )
+
+    @Test
+    fun お試し版も含めていちばん新しい版() {
+        // GitHub の一覧は新しい順とは限らないので、番号で選ぶ
+        val releases = listOf(
+            release(136, prerelease = false),
+            release(142, prerelease = true),
+            UpdateRules.Release("ios-build-3", true, false, emptyList()),
+            release(140, prerelease = true),
+            release(144, prerelease = true, draft = true),
+        )
+        val beta = UpdateRules.newest(releases, includePrerelease = true, is64Bit = true)!!
+        assertEquals(142, beta.versionCode)
+        assertTrue(beta.prerelease)
+        assertEquals("https://example/142/64", beta.apkUrl)
+        // お試し版を受け取らない端末は、配った版だけ
+        val stable = UpdateRules.newest(releases, includePrerelease = false, is64Bit = false)!!
+        assertEquals(136, stable.versionCode)
+        assertFalse(stable.prerelease)
+        assertEquals("https://example/136/32", stable.apkUrl)
+        // 配った版の方が新しければそちら（お試し版を latest にしたあと）
+        val promoted = UpdateRules.newest(listOf(release(142, false), release(140, true)), includePrerelease = true, is64Bit = true)!!
+        assertEquals(142, promoted.versionCode)
+        assertFalse(promoted.prerelease)
+        // 合う版が無ければ null
+        assertNull(UpdateRules.newest(listOf(release(150, true, draft = true)), includePrerelease = true, is64Bit = true))
+    }
+
     @Test
     fun 新しいか_確かめる間隔() {
         val u = UpdateRules.pick("build-129", assets, true)!!

@@ -87,6 +87,11 @@ class SettingsActivity : AppCompatActivity() {
                 (activity as? AppCompatActivity)?.let { AppUpdater.checkNow(it) }
                 true
             }
+            findPreference<androidx.preference.Preference>("update_prerelease")?.setOnPreferenceChangeListener { _, _ ->
+                // 切り替えたら、次にアプリを開いたとき 12 時間を待たずに確かめる
+                AppSettings.setUpdateCheckedAt(requireContext(), 0L)
+                true
+            }
             findPreference<androidx.preference.Preference>("licenses")?.setOnPreferenceClickListener {
                 showLicenses()
                 true

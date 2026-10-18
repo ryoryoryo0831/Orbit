@@ -139,6 +139,8 @@ object AppSettings {
 
     // 新しい版の知らせ（AppUpdater）
     fun updateCheckOnStart(c: Context) = bool(c, "update_check", true)
+    /** お試し版（まだみんなには配っていない版）も知らせる。試す人の端末だけオンにする */
+    fun updateIncludePrerelease(c: Context) = bool(c, "update_prerelease", false)
     fun updateCheckedAt(c: Context) = prefs(c).getLong("update_checked_at", 0L)
     fun setUpdateCheckedAt(c: Context, time: Long) = prefs(c).edit { putLong("update_checked_at", time) }
 

@@ -1,0 +1,54 @@
+name: Android 版をみんなに配る
+
+# お試し版（android.yml がプレリリースとして出した版）を latest にする。
+# アプリの「新しい版を知らせる」は latest を見るので、これで家族の端末にも新しい版が出る。
+# GitHub の Actions のページの「Run workflow」から、または PC で
+#   gh workflow run promote.yml -f version=1.0.N
+# （版を空にすると、いちばん新しいお試し版）
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "配る版（例 1.0.140）。空ならいちばん新しいお試し版"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: お試し版を latest にする
+        run: |
+          set -euo pipefail
+          # Android 版のタグ（build-N）だけ。iPhone 版（ios-build-N）は対象外
+          list=$(gh release list --limit 100 --json tagName,isPrerelease,isDraft,isLatest)
+          if [ -n "$VERSION" ]; then
+            n="${VERSION#1.0.}"
+            case "$n" in ''|*[!0-9]*) echo "::error::版は 1.0.N の形で書いてください（$VERSION）"; exit 1 ;; esac
+            tag="build-$n"
+          else
+            tag=$(echo "$list" | jq -r '[.[] | select(.isPrerelease and (.isDraft | not) and (.tagName | test("^build-[0-9]+$")))]
+              | sort_by(.tagName | ltrimstr("build-") | tonumber) | last | .tagName // empty')
+            if [ -z "$tag" ]; then echo "::error::配っていないお試し版がありません"; exit 1; fi
+          fi
+          n="${tag#build-}"
+          # 公開されていて、スマホ用・テレビ用の APK が両方そろっているか
+          assets=$(gh release view "$tag" --json assets,isDraft --jq 'select(.isDraft | not) | .assets[].name') || { echo "::error::$tag が見つかりません"; exit 1; }
+          for f in "Orbit-1.0.$n.apk" "Orbit-1.0.$n-32bit.apk"; do
+            echo "$assets" | grep -qx "$f" || { echo "::error::$tag に $f がありません"; exit 1; }
+          done
+          latest=$(echo "$list" | jq -r '[.[] | select(.isLatest)][0].tagName // empty')
+          if [ -n "$latest" ] && [ "${latest#build-}" -gt "$n" ] 2>/dev/null; then
+            # 古い版を latest にしても、もう新しい版を入れた端末は戻らない（知らせが出なくなるだけ）
+            echo "::warning::今の latest（$latest）より古い版を latest にします"
+          fi
+          gh release edit "$tag" --prerelease=false --latest
+          echo "Orbit 1.0.$n をみんなに配りました（latest：$tag）" | tee -a "$GITHUB_STEP_SUMMARY"
