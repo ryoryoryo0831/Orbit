@@ -178,6 +178,10 @@
             app:key="network_caching"
             app:title="ネットワーク再生の先読み"
             app:useSimpleSummaryProvider="true" />
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="crash_log"
+            app:title="落ちたときの記録" />
     </PreferenceCategory>
 
     <PreferenceCategory

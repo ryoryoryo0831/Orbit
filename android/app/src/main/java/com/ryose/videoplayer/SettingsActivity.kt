@@ -13,7 +13,11 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.text.HtmlCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceFragmentCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -63,6 +67,27 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<androidx.preference.Preference>("licenses")?.setOnPreferenceClickListener {
                 showLicenses()
                 true
+            }
+            findPreference<androidx.preference.Preference>("crash_log")?.setOnPreferenceClickListener {
+                lifecycleScope.launch {
+                    val records = withContext(Dispatchers.IO) { CrashLog.records(ctx) }
+                    CrashLogScreen.showList(requireContext(), records) { refreshCrashSummary() }
+                }
+                true
+            }
+        }
+
+        override fun onResume() {
+            super.onResume()
+            refreshCrashSummary()
+        }
+
+        /** 「落ちたときの記録」の下に件数を出す（記録を読むのは裏で） */
+        private fun refreshCrashSummary() {
+            val ctx = context ?: return
+            lifecycleScope.launch {
+                val records = withContext(Dispatchers.IO) { CrashLog.records(ctx) }
+                findPreference<androidx.preference.Preference>("crash_log")?.summary = CrashLogScreen.summary(records)
             }
         }
 
