@@ -30,6 +30,7 @@ jobs:
           set -euo pipefail
           # Android 版のタグ（build-N）だけ。iPhone 版（ios-build-N）は対象外
           list=$(gh release list --limit 100 --json tagName,isPrerelease,isDraft,isLatest)
+          VERSION=$(echo "$VERSION" | tr -d "[:space:]")
           if [ -n "$VERSION" ]; then
             n="${VERSION#1.0.}"
             case "$n" in ''|*[!0-9]*) echo "::error::版は 1.0.N の形で書いてください（$VERSION）"; exit 1 ;; esac
@@ -43,7 +44,7 @@ jobs:
           # 公開されていて、スマホ用・テレビ用の APK が両方そろっているか
           assets=$(gh release view "$tag" --json assets,isDraft --jq 'select(.isDraft | not) | .assets[].name') || { echo "::error::$tag が見つかりません"; exit 1; }
           for f in "Orbit-1.0.$n.apk" "Orbit-1.0.$n-32bit.apk"; do
-            echo "$assets" | grep -qx "$f" || { echo "::error::$tag に $f がありません"; exit 1; }
+            echo "$assets" | grep -Fqx "$f" || { echo "::error::$tag に $f がありません"; exit 1; }
           done
           latest=$(echo "$list" | jq -r '[.[] | select(.isLatest)][0].tagName // empty')
           if [ -n "$latest" ] && [ "${latest#build-}" -gt "$n" ] 2>/dev/null; then

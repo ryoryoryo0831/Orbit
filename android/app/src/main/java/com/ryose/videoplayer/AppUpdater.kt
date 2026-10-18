@@ -36,8 +36,8 @@ import java.net.URL
 object AppUpdater {
     private const val LATEST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases/latest"
 
-    /** お試し版も調べるときの一覧（新しい順。iPhone 版も混ざるが、お試し版は直近にあるので 30 件で足りる） */
-    private const val LIST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases?per_page=30"
+    /** お試し版も調べるときの一覧（新しい順。iPhone 版も混ざるが、100 件まで見る） */
+    private const val LIST_URL = "https://api.github.com/repos/ryoryoryo0831/Orbit/releases?per_page=100"
 
     /** 起動したとき：12 時間に 1 回まで確かめ、新しい版があれば知らせる（無ければ何も出さない） */
     fun checkOnStart(activity: AppCompatActivity) {
@@ -79,7 +79,7 @@ object AppUpdater {
                 UpdateRules.isNewer(update, currentVersionCode(activity)) -> offer(activity, update)
                 else -> message(
                     activity, "最新の版です",
-                    "今の版（${versionName(activity)}）がいちばん新しい版です。" + if (includePrerelease) "（お試し版も含めて）" else "",
+                    "今の版（${versionName(activity)}）がいちばん新しい版です" + (if (includePrerelease) "（お試し版も含めて）" else "") + "。",
                 )
             }
         }
