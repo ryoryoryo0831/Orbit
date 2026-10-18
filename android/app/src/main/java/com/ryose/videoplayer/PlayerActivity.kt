@@ -23,7 +23,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Rational
 import android.view.GestureDetector
-import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -32,7 +31,6 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -49,7 +47,6 @@ import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,16 +85,10 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var repeatButton: ImageButton
     private lateinit var unlockButton: ImageButton
     private lateinit var abBar: AbRepeatBar
-    private lateinit var dvdPad: View
-    /** 十字キーを ✕ で閉じた（DVD のメニューから出るまでは出さない） */
-    private var dvdPadDismissed = false
-    /** DVD（ISO）を再生している間、メニューを表示しているかを見張る（libVLC はタイトルが変わったことを知らせないため） */
-    private val dvdMenuCheck = object : Runnable {
-        override fun run() {
-            updateDvdPad()
-            handler.postDelayed(this, 700)
-        }
-    }
+    /** DVD のメニュー用の十字キー（DvdPad.kt） */
+    private lateinit var dvdPad: DvdPad
+    /** 字幕・音声・映像トラックのメニュー（TrackMenus.kt） */
+    private lateinit var trackMenus: TrackMenus
     private lateinit var castButton: ImageButton
     private lateinit var castInfo: TextView
     private lateinit var gestureInfo: TextView
@@ -314,7 +305,8 @@ class PlayerActivity : AppCompatActivity() {
         centerControls = findViewById(R.id.centerControls)
         titleView = findViewById(R.id.titleView)
         seekBar = findViewById(R.id.seekBar)
-        setupDvdPad()
+        dvdPad = DvdPad(findViewById(R.id.dvdPad), handler, { svc }, { inPip || locked })
+        trackMenus = TrackMenus(this, { svc }, { pickSubtitle.launch(arrayOf("*/*")) }, { showInfo(it) })
         abBar = AbRepeatBar(
             findViewById(R.id.abPanel),
             findViewById<AbRangeView>(R.id.abRange).also { it.seekBar = seekBar },
@@ -505,7 +497,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        handler.removeCallbacks(dvdMenuCheck)
+        dvdPad.stop()
         // 自由な小窓に引き渡した：再生はそのまま続ける
         if (handedToPopup) {
             disconnect()
@@ -667,9 +659,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun updateItem() {
         val s = svc ?: return
         // DVD（ISO）のときだけ、メニューを表示しているかを見張って十字キーを出す
-        handler.removeCallbacks(dvdMenuCheck)
-        dvdPadDismissed = false
-        if (s.currentItem?.isDiscImage == true) handler.post(dvdMenuCheck) else dvdPad.visibility = View.GONE
+        dvdPad.onItemChanged(s.currentItem?.isDiscImage == true)
         // 曲・動画が変わると A-B リピートは解除される（前に使っていたファイルなら、覚えていた区間が戻る）
         abBar.refresh()
         s.takeAbRestoredMessage()?.let { showInfo(it) }
@@ -770,122 +760,6 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** トラックの一覧（選ばれているものにチェック） */
-    private fun trackItems(
-        tracks: Array<MediaPlayer.TrackDescription>, current: Int, icon: Int, select: (Int) -> Unit,
-    ): List<SheetItem> = tracks.map { t ->
-        val name = if (t.id == -1) "オフ" else t.name ?: "トラック ${t.id}"
-        val on = t.id == current
-        SheetItem(if (on) R.drawable.ic_check else icon, name, if (on) "選択中" else null, active = on) { select(t.id) }
-    }
-
-    private fun showSubtitleMenu() {
-        val s = svc ?: return
-        val tracks = s.spuTracks()
-        ActionSheet.show(
-            this, "字幕",
-            // 選ぶときは、そのときの MediaPlayer に（開いている間に次の動画へ進むと、取り替えられているため）
-            trackItems(tracks, s.spuTrack, R.drawable.ic_subtitles) { svc?.selectSpuTrack(it) } + listOf(
-                SheetItem(R.drawable.ic_add, "字幕ファイルを追加") { pickSubtitle.launch(arrayOf("*/*")) },
-                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(s.spuDelay)}") { showDelayDialog(subtitle = true) },
-            ) + listOfNotNull(
-                // 隣にある字幕ファイルが文字化けしたとき
-                if (svc?.currentItem?.path != null) SheetItem(
-                    R.drawable.ic_edit, "文字化けを直す（文字コード）",
-                    Subtitles.CHARSETS.firstOrNull { it.second == svc?.subtitleCharset() }?.first ?: "自動",
-                ) { showCharsetMenu() } else null,
-            ),
-        )
-    }
-
-    private fun showCharsetMenu() {
-        val s = svc ?: return
-        val current = s.subtitleCharset()
-        val options: List<Pair<String, String?>> = listOf<Pair<String, String?>>("自動（おすすめ）" to null) + Subtitles.CHARSETS
-        ActionSheet.show(this, "字幕の文字コード", options.map { (label, name) ->
-            SheetItem(if (name == current) R.drawable.ic_check else R.drawable.ic_subtitles, label, active = name == current) {
-                s.setSubtitleCharset(name)
-                showInfo("字幕の文字コード：${label.substringBefore('（')}")
-            }
-        })
-    }
-
-    private fun showAudioMenu() {
-        val s = svc ?: return
-        val tracks = s.audioTracks()
-        ActionSheet.show(
-            this, "音声トラック",
-            trackItems(tracks, s.audioTrack, R.drawable.ic_audiotrack) { svc?.selectAudioTrack(it) } +
-                SheetItem(R.drawable.ic_timer, "タイミング調整", "現在 ${formatDelay(s.audioDelay)}") { showDelayDialog(subtitle = false) },
-        )
-    }
-
-    private fun formatDelay(us: Long) = "%+.1f 秒".format(us / 1_000_000.0)
-
-    /** 字幕・音声のずれを 0.1 秒単位で調整するダイアログ */
-    private fun showDelayDialog(subtitle: Boolean) {
-        if (svc == null) return
-        val dp = resources.displayMetrics.density
-        // そのときの MediaPlayer を使う（開いている間に次の動画へ進むと、取り替えられているため）
-        fun current(): Long {
-            val s = svc ?: return 0L
-            return if (subtitle) s.spuDelay else s.audioDelay
-        }
-        fun apply(us: Long) {
-            val s = svc ?: return
-            if (subtitle) s.setSpuDelay(us) else s.setAudioDelay(us)
-        }
-
-        val value = TextView(this).apply {
-            textSize = 28f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setPadding(0, 0, 0, (12 * dp).toInt())
-        }
-        fun refresh() {
-            value.text = formatDelay(current())
-        }
-
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf(-1000L, -100L, 100L, 1000L).forEach { ms ->
-            row.addView(
-                MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                    text = (if (ms > 0) "+" else "−") + "%.1f".format(abs(ms) / 1000.0)
-                    setPadding(0, 0, 0, 0)
-                    setOnClickListener {
-                        apply(current() + ms * 1000)
-                        refresh()
-                    }
-                },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = (3 * dp).toInt()
-                    marginEnd = (3 * dp).toInt()
-                }
-            )
-        }
-        val hint = TextView(this).apply {
-            text = if (subtitle) "＋：字幕を遅らせる　−：字幕を早める" else "＋：音声を遅らせる　−：音声を早める"
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(Color.LTGRAY)
-            setPadding(0, (8 * dp).toInt(), 0, 0)
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((20 * dp).toInt(), (16 * dp).toInt(), (20 * dp).toInt(), 0)
-            addView(value)
-            addView(row)
-            addView(hint)
-        }
-        refresh()
-        MaterialAlertDialogBuilder(this)
-            .setTitle(if (subtitle) "字幕のタイミング" else "音声のタイミング")
-            .setView(box)
-            .setPositiveButton("閉じる", null)
-            .setNeutralButton("リセット") { _, _ -> apply(0) }
-            .show()
-    }
-
     // ---------- 画面サイズ・向き・その他メニュー ----------
 
     private fun cycleScale() {
@@ -972,7 +846,7 @@ class PlayerActivity : AppCompatActivity() {
             if (titleCount > 1) add(SheetItem(R.drawable.ic_movie, "タイトル", "$titleCount 個") { showTitles() })
             // DVD のメニューを開いて、十字キーで操作する
             if (s.discMenuTitle() >= 0) add(SheetItem(R.drawable.ic_album, "DVD メニュー") { openDvdMenu() })
-            if (s.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { showVideoTrackMenu() })
+            if (s.videoTracksCount > 1) add(SheetItem(R.drawable.ic_movie, "映像トラック") { trackMenus.showVideoTracks() })
         }
         val items = buildList {
             add(SheetItem(if (fav) R.drawable.ic_star else R.drawable.ic_star_border, if (fav) "お気に入りから外す" else "お気に入りに追加", active = fav) {
@@ -1067,13 +941,6 @@ class PlayerActivity : AppCompatActivity() {
         return sec * 1000
     }
 
-    private fun showVideoTrackMenu() {
-        val s = svc ?: return
-        val tracks = s.videoTracks()
-        if (tracks.isEmpty()) return
-        ActionSheet.show(this, "映像トラック", trackItems(tracks, s.videoTrack, R.drawable.ic_movie) { svc?.selectVideoTrack(it) })
-    }
-
     /** チャプターの一覧（タップでそこへ移動） */
     private fun showChapters() {
         val s = svc ?: return
@@ -1092,48 +959,13 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------- DVD のメニュー ----------
 
-    private fun setupDvdPad() {
-        dvdPad = findViewById(R.id.dvdPad)
-        fun nav(id: Int, direction: Int) = findViewById<View>(id).setOnClickListener {
-            svc?.navigate(direction)
-            // 決定でメニューから本編に移ったら、十字キーを片付ける
-            handler.postDelayed({ updateDvdPad() }, 400)
-        }
-        nav(R.id.dvdUp, MediaPlayer.Navigate.Up)
-        nav(R.id.dvdDown, MediaPlayer.Navigate.Down)
-        nav(R.id.dvdLeft, MediaPlayer.Navigate.Left)
-        nav(R.id.dvdRight, MediaPlayer.Navigate.Right)
-        nav(R.id.dvdOk, MediaPlayer.Navigate.Activate)
-        findViewById<View>(R.id.dvdClose).setOnClickListener {
-            dvdPadDismissed = true
-            updateDvdPad()
-        }
-        // 横向きでナビゲーションバー・切り欠きに重ならないように
-        val baseEnd = (dvdPad.layoutParams as ViewGroup.MarginLayoutParams).marginEnd
-        ViewCompat.setOnApplyWindowInsetsListener(dvdPad) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.updateLayoutParams<ViewGroup.MarginLayoutParams> { marginEnd = baseEnd + bars.right }
-            insets
-        }
-    }
-
-    /** DVD のメニューを表示している間だけ十字キーを出す（✕で閉じたら、メニューから出るまで出さない） */
-    private fun updateDvdPad() {
-        val inMenu = svc?.isInDiscMenu() == true
-        if (!inMenu) dvdPadDismissed = false
-        dvdPad.visibility = if (inMenu && !dvdPadDismissed && !inPip && !locked) View.VISIBLE else View.GONE
-    }
-
     /** ︙の「DVD メニュー」：メニューを開いて十字キーを出す */
     private fun openDvdMenu() {
-        val s = svc ?: return
-        if (!s.openDiscMenu()) {
+        if (!dvdPad.openMenu()) {
             showInfo("この DVD にはメニューがありません")
             return
         }
-        dvdPadDismissed = false
         hideControls()
-        handler.postDelayed({ updateDvdPad() }, 500)
     }
 
     /** DVD・Blu-ray のタイトルの一覧（本編・特典映像など）。選ぶとそのタイトルを最初から再生する */
@@ -1230,24 +1062,7 @@ class PlayerActivity : AppCompatActivity() {
      * onKeyDown より先に受け取る（決定キーは、選ばれている画面全体の touchLayer が先に「クリック」として取ってしまうため）
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        val s0 = svc
-        if (dvdPad.visibility == View.VISIBLE && s0 != null && errorPanel.visibility != View.VISIBLE) {
-            val direction = when (event.keyCode) {
-                android.view.KeyEvent.KEYCODE_DPAD_UP -> MediaPlayer.Navigate.Up
-                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> MediaPlayer.Navigate.Down
-                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> MediaPlayer.Navigate.Left
-                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> MediaPlayer.Navigate.Right
-                android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> MediaPlayer.Navigate.Activate
-                else -> null
-            }
-            if (direction != null) {
-                if (event.action == android.view.KeyEvent.ACTION_DOWN) {
-                    s0.navigate(direction)
-                    handler.postDelayed({ updateDvdPad() }, 400)
-                }
-                return true
-            }
-        }
+        if (errorPanel.visibility != View.VISIBLE && dvdPad.dispatchKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -1268,8 +1083,8 @@ class PlayerActivity : AppCompatActivity() {
                 android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { s0.previous(); return true }
                 // テレビのリモコンの「メニュー（≡）」で︙のメニュー、字幕・音声のボタンでそれぞれのメニュー
                 android.view.KeyEvent.KEYCODE_MENU -> { showMoreMenu(); return true }
-                android.view.KeyEvent.KEYCODE_CAPTIONS -> { showSubtitleMenu(); return true }
-                android.view.KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK -> { showAudioMenu(); return true }
+                android.view.KeyEvent.KEYCODE_CAPTIONS -> { trackMenus.showSubtitles(); return true }
+                android.view.KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK -> { trackMenus.showAudio(); return true }
                 android.view.KeyEvent.KEYCODE_INFO -> { toggleControls(); return true }
                 android.view.KeyEvent.KEYCODE_MEDIA_STOP -> { finish(); return true }
                 android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> if (!controlsVisible) {
@@ -1329,8 +1144,8 @@ class PlayerActivity : AppCompatActivity() {
         findViewById<View>(R.id.moreButton).onTap { showMoreMenu() }
         findViewById<View>(R.id.lockButton).setOnClickListener { setLocked(true) }
         unlockButton.setOnClickListener { setLocked(false) }
-        findViewById<View>(R.id.subtitleButton).onTap { showSubtitleMenu() }
-        findViewById<View>(R.id.audioButton).onTap { showAudioMenu() }
+        findViewById<View>(R.id.subtitleButton).onTap { trackMenus.showSubtitles() }
+        findViewById<View>(R.id.audioButton).onTap { trackMenus.showAudio() }
         speedButton.onTap { svc?.let { PlayerDialogs.showSpeed(this, it) { updateModes() } } }
         findViewById<View>(R.id.aspectButton).onTap { cycleScale() }
         castButton.onTap { svc?.let { PlayerDialogs.showCast(this, it) } }

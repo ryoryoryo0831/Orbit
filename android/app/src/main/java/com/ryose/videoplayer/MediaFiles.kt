@@ -52,17 +52,6 @@ object MediaFiles {
 
     fun prefersSoftwareDecoding(name: String) = name.substringAfterLast('.', "").lowercase() in SOFTWARE_DECODE_EXT
 
-    /**
-     * VLC のトラック名が日本語のものか。VLC は言語のコードを英語の名前にして「Track 1 - [Japanese]」のように付ける
-     * （src/input/es_out.c の LanguageGetName。知らないコードはそのまま「[jp]」）。MKV などのトラック名に「日本語」と書かれていることもある
-     */
-    fun isJapaneseTrack(name: String?) = name != null && JAPANESE_TRACK.containsMatchIn(name)
-
-    fun isCommentaryTrack(name: String?) = name != null && COMMENTARY_TRACK.containsMatchIn(name)
-
-    private val JAPANESE_TRACK = Regex("""japanese|日本語|\[(ja|jp|jpn|jap)]""", RegexOption.IGNORE_CASE)
-    private val COMMENTARY_TRACK = Regex("""commentary|コメンタリー|解説""", RegexOption.IGNORE_CASE)
-
     fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in AUDIO_EXT
 
     private fun visibleChildren(dir: File): List<File> =

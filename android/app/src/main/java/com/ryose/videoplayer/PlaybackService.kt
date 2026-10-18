@@ -730,7 +730,7 @@ class PlaybackService : Service() {
             media.addOption(":no-mediacodec-dr")
         }
         if (!item.isAudio) {
-            // 日本語の音声があれば最初から日本語に（あとで切り替えると音が途切れるので。字幕を消すのは applyTrackRule）。
+            // 日本語の音声があれば最初から日本語に（あとで切り替えると音が途切れるので。字幕を消すのは TrackSelector）。
             // DVD でも dvdnav が音声の言語の好みとして使う
             media.addOption(":audio-language=ja")
         }
@@ -742,20 +742,10 @@ class PlaybackService : Service() {
         if (item.isDiscImage) {
             // Blu-ray のメニュー（多くは Java で動く）は Android では動かないので出さない
             media.addOption(":no-bluray-menu")
-            if (!AppSettings.dvdMenuStart(this)) {
-                // DVD もメニューを出さず、本編（いちばん長いタイトル）を再生が始まってから選び、続きの位置へはそのあとで移る。
-                // メニューは再生画面の︙から開ける（十字キーで操作する）
-                media.addOption(":no-dvdnav-menu")
-                discTitlePending = gen
-                discStartMs = startMs
-            } else {
-                // メニューに映像が無い ISO（本編だけを取り出したものなど）は黒い画面のまま止まるので、そのときは本編へ
-                discMenuWatch = gen
-                discStartMs = startMs
-                // メニューより先に宣伝などが流れるディスクは、メニューへ移る
-                discJumpPending = gen
-                discJumpGen = gen
-            }
+            val startInMenu = AppSettings.dvdMenuStart(this)
+            // メニューから始めないときは DVD もメニューを出さない（本編は DiscController が選ぶ。メニューは再生画面の︙から開ける）
+            if (!startInMenu) media.addOption(":no-dvdnav-menu")
+            disc.prepare(gen, startInMenu, startMs)
         } else if (startMs > 0) {
             media.addOption(":start-time=${startMs / 1000.0}")
         }
@@ -1258,206 +1248,75 @@ class PlaybackService : Service() {
     fun chapters(): Array<MediaPlayer.Chapter> = runCatching { player.getChapters(-1) }.getOrNull() ?: emptyArray()
 
     // ---------- DVD・Blu-ray のディスクイメージ（ISO） ----------
+    // 段取りは DiscController、判断は DiscRules（テストできる部分）
 
-    /** 本編を選ぶのを待っている再生（playGeneration の番号。無ければ -1） */
-    private var discTitlePending = -1
-    /** 本編を選んだあとに移る位置（続きから再生・A-B リピート） */
-    private var discStartMs = 0L
-    /** メニューから始めた DVD で、メニューに映像があるかを見る再生（playGeneration の番号。無ければ -1） */
-    private var discMenuWatch = -1
-    /** メニューから始めた DVD で、メニューより先に流れる宣伝などを飛ばす再生（始めるのを待っている／見ている間。無ければ -1） */
-    private var discJumpPending = -1
-    private var discJumpGen = -1
+    private val disc = DiscController(handler, object : DiscController.Host {
+        override val generation: Int get() = playGeneration
+        override val isDiscItem: Boolean get() = currentItem?.isDiscImage == true
+        override val startedWithoutVideo: Boolean get() = this@PlaybackService.startedWithoutVideo
+        override val videoTracksCount: Int get() = this@PlaybackService.videoTracksCount
+        override fun vlcTitles(): Array<MediaPlayer.Title> = runCatching { player.titles }.getOrNull() ?: emptyArray()
+        override fun vlcTitle(): Int = runCatching { player.title }.getOrDefault(-1)
+        override fun setVlcTitle(index: Int) {
+            runCatching { player.title = index }
+        }
+        override fun vlcNavigate(direction: Int) {
+            runCatching { player.navigate(direction) }
+        }
+        override fun hasMedia(): Boolean = player.hasMedia()
+        override fun setVlcTime(ms: Long) {
+            player.setTime(ms)
+        }
+        override fun onTitleChanged() = dispatch { it.onModesChanged() }
+        override fun onLeftMenu() = tracks.schedule()
+    })
 
     /** DVD・Blu-ray のタイトル（本編・特典映像・メニューなど） */
-    fun titles(): Array<MediaPlayer.Title> = runCatching { player.titles }.getOrNull() ?: emptyArray()
+    fun titles(): Array<MediaPlayer.Title> = disc.titles()
 
-    fun currentTitle(): Int = runCatching { player.title }.getOrDefault(-1)
+    fun currentTitle(): Int = disc.currentTitle()
 
     /** 再生画面からタイトル（本編・特典・メニュー）を選ぶ */
-    fun playTitle(index: Int) {
-        // 自分で選んだので、宣伝を飛ばしてメニューへ移す処理はやめる
-        discJumpGen = -1
-        runCatching { player.title = index }
-        dispatch { it.onModesChanged() }
-    }
+    fun playTitle(index: Int) = disc.playTitle(index)
 
     /** DVD のメニューを表示しているか（今のタイトルがメニュー） */
-    fun isInDiscMenu(): Boolean {
-        if (currentItem?.isDiscImage != true) return false
-        val titles = titles()
-        val i = currentTitle()
-        return i in titles.indices && titles[i].isMenu
-    }
+    fun isInDiscMenu(): Boolean = disc.isInMenu()
 
     /** DVD のメニューのタイトル（無ければ -1） */
-    fun discMenuTitle(): Int = if (currentItem?.isDiscImage == true) titles().indexOfFirst { it.isMenu } else -1
+    fun discMenuTitle(): Int = disc.menuTitle()
 
     /** DVD のメニューを開く。開けなければ false */
-    fun openDiscMenu(): Boolean {
-        val i = discMenuTitle()
-        if (i < 0) return false
-        playTitle(i)
-        return true
-    }
+    fun openDiscMenu(): Boolean = disc.openMenu()
 
     /** DVD のメニューの操作（MediaPlayer.Navigate の上・下・左・右・決定） */
-    fun navigate(direction: Int) {
-        // メニューを操作したら、そのあと本編などへ進んでもメニューへ戻さない
-        discJumpGen = -1
-        runCatching { player.navigate(direction) }
-    }
-
-    /**
-     * 「メニューから始める」とき、ディスクがメニューより先に宣伝・予告編・本編などのタイトルを流したら、メニューへ移る。
-     * クリミナル・マインド S3 などは、ディスク自体が最初に「リリース情報」などの宣伝を流す作りで、
-     * メニューが最初に来ないとユーザーから言われた（2026-10-17）。
-     * 著作権の注意などはメニューの仕組みの中で出ることが多い（ドクター・ストレンジ）ので、メニューの間は待つ。
-     * メニューへは VLC のタイトル 0 ＝ libdvdnav のルートメニューの呼び出しで移る（dvdnav.c の DEMUX_SET_TITLE）。
-     * 移れないディスクもある（libdvdnav は First Play の間などはメニューを呼べない）ので、3 回まで試す。
-     * メニューへ移れたら、またはユーザーがメニューを操作した・タイトルを選んだ・メニューに映像が無くて本編にしたらやめる。1 分たったらやめる
-     */
-    private fun jumpToDiscMenu(gen: Int, tries: Int, jumps: Int) {
-        handler.postDelayed({
-            if (gen != playGeneration || discJumpGen != gen) return@postDelayed
-            val titles = titles()
-            val i = currentTitle()
-            val menu = titles.indexOfFirst { it.isMenu }
-            val inTitle = menu >= 0 && i in titles.indices && !titles[i].isMenu
-            var n = jumps
-            when {
-                // メニューへ移れた
-                !inTitle && jumps > 0 && i in titles.indices -> discJumpGen = -1
-                // 3 回試しても移れない
-                inTitle && jumps >= 3 -> discJumpGen = -1
-                inTitle -> {
-                    runCatching { player.title = menu }
-                    dispatch { it.onModesChanged() }
-                    n++
-                }
-            }
-            if (discJumpGen != gen) return@postDelayed
-            if (tries < 60) jumpToDiscMenu(gen, tries + 1, n) else discJumpGen = -1
-        }, 1000)
-    }
-
-    /**
-     * メニューから始めた DVD で、メニューを表示しているのに映像が 6 秒たっても無いときは、本編を再生する。
-     * 本編だけを取り出した ISO では、メニューのタイトルに映像が無く、黒い画面のまま止まっていた（2026-10-17 にテレビの実機で確認）。
-     * ディスクを開くまで（NAS では CSS の鍵の取得に 15 秒ほどかかることがある）はメニューかどうか分からないので、1 分まで待つ。
-     * 映像が出てきたら見るのをやめる
-     */
-    private fun watchEmptyDiscMenu(gen: Int, tries: Int, emptySeconds: Int) {
-        handler.postDelayed({
-            if (gen != playGeneration || startedWithoutVideo) return@postDelayed
-            if (runCatching { player.videoTracksCount }.getOrDefault(0) > 0) return@postDelayed
-            val empty = if (isInDiscMenu()) emptySeconds + 1 else 0
-            when {
-                empty >= 6 -> chooseMainTitle(gen, 0)
-                tries < 60 -> watchEmptyDiscMenu(gen, tries + 1, empty)
-            }
-        }, 1000)
-    }
-
-    private fun scheduleMainTitle(gen: Int, tries: Int) {
-        handler.postDelayed({ chooseMainTitle(gen, tries) }, 400)
-    }
-
-    /**
-     * 本編（メニューではない、いちばん長いタイトル）を再生する。
-     * タイトルの一覧は再生が始まってから少しして分かるので、分かるまで少し待つ
-     */
-    private fun chooseMainTitle(gen: Int, tries: Int) {
-        if (gen != playGeneration) return
-        // 本編にしたので、メニューへ戻さない
-        discJumpGen = -1
-        val titles = titles()
-        if (titles.isEmpty()) {
-            if (tries < 10) scheduleMainTitle(gen, tries + 1) else seekDiscStart(gen)
-            return
-        }
-        val main = titles.indices.filter { !titles[it].isMenu }.maxByOrNull { titles[it].duration }
-        if (main != null && main != currentTitle()) {
-            runCatching { player.title = main }
-            dispatch { it.onModesChanged() }
-        }
-        seekDiscStart(gen)
-    }
-
-    /** 本編に切り替わってから、続きの位置へ移る */
-    private fun seekDiscStart(gen: Int) {
-        val ms = discStartMs
-        discStartMs = 0
-        if (ms <= 0) return
-        handler.postDelayed({ if (gen == playGeneration) player.setTime(ms) }, 500)
-    }
+    fun navigate(direction: Int) = disc.navigate(direction)
 
     // ---------- 音声・字幕の選び方 ----------
+    // 選ぶのは TrackSelector、判断は TrackRules（テストできる部分）
 
-    /** 動画ごとに手で選んだ音声・字幕のトラック（アプリを閉じるまで覚えておき、開き直したとき＝デコードの切り替えなどに戻す） */
-    private val chosenAudio = mutableMapOf<String, Int>()
-    private val chosenSpu = mutableMapOf<String, Int>()
+    private val tracks = TrackSelector(handler, object : TrackSelector.Host {
+        override fun trackTarget(): String? {
+            val item = currentItem ?: return null
+            return if (item.isAudio || preparing || isInDiscMenu()) null else item.key
+        }
+        override fun audioTracks() = this@PlaybackService.audioTracks()
+        override fun spuTracks() = this@PlaybackService.spuTracks()
+        override val audioTrack: Int get() = this@PlaybackService.audioTrack
+        override val spuTrack: Int get() = this@PlaybackService.spuTrack
+        override fun setAudioTrack(id: Int) {
+            runCatching { player.setAudioTrack(id) }
+        }
+        override fun setSpuTrack(id: Int) {
+            runCatching { player.setSpuTrack(id) }
+        }
+        override fun hasAddedSubtitles(key: String): Boolean = addedSubtitles[key]?.isNotEmpty() == true
+    })
 
     /** 再生画面のメニューから音声を選ぶ */
-    fun selectAudioTrack(id: Int) {
-        currentItem?.let { chosenAudio[it.key] = id }
-        runCatching { player.setAudioTrack(id) }
-    }
+    fun selectAudioTrack(id: Int) = tracks.selectAudio(currentItem?.key, id)
 
     /** 再生画面のメニューから字幕を選ぶ（-1 でオフ） */
-    fun selectSpuTrack(id: Int) {
-        currentItem?.let { chosenSpu[it.key] = id }
-        runCatching { player.setSpuTrack(id) }
-    }
-
-    private val trackRule = Runnable { applyTrackRule() }
-
-    /** トラックが増えたり選ばれたりするたびに呼ばれるので、まとめてから選ぶ */
-    private fun scheduleTrackRule() {
-        handler.removeCallbacks(trackRule)
-        handler.postDelayed(trackRule, 300)
-    }
-
-    /**
-     * 日本語の音声がある動画は、音声を日本語に、字幕をオフにする（ISO に限らず。ユーザーの希望）。
-     * 手で選んだものがあればそちらを優先する。字幕はあとから増える（隣の字幕ファイル・DVD の本編に移ったとき）ので、そのたびに見直す。
-     * DVD のメニューのボタン（選んでいる所の色）は字幕の仕組みで出しているので、メニューの間は触らない
-     */
-    private fun applyTrackRule() {
-        val item = currentItem ?: return
-        if (item.isAudio || preparing || isInDiscMenu()) return
-        val p = player
-        val audio = runCatching { p.audioTracks }.getOrNull() ?: return
-        val spu = runCatching { p.spuTracks }.getOrNull() ?: emptyArray()
-        val myAudio = chosenAudio[item.key]
-        val mySpu = chosenSpu[item.key]
-        if (myAudio != null) {
-            if (p.audioTrack != myAudio && audio.any { it.id == myAudio }) p.setAudioTrack(myAudio)
-        }
-        if (mySpu != null) {
-            if (p.spuTrack != mySpu && (mySpu == -1 || spu.any { it.id == mySpu })) p.setSpuTrack(mySpu)
-        }
-        // 音声解説（コメンタリー）は後回し
-        val japanese = audio.filter { it.id != -1 && MediaFiles.isJapaneseTrack(it.name) }
-            .sortedBy { MediaFiles.isCommentaryTrack(it.name) }
-        if (japanese.isEmpty()) return
-        if (myAudio == null && japanese.none { it.id == p.audioTrack }) p.setAudioTrack(japanese.first().id)
-        // 「字幕ファイルを追加」で自分で足した字幕は消さない
-        val addedByUser = addedSubtitles[item.key]?.isNotEmpty() == true
-        if (mySpu == null && !addedByUser && p.spuTrack != -1) p.setSpuTrack(-1)
-    }
-
-    /** DVD の本編などに移ったとき（メニューから出たとき）にも、音声・字幕を見直す */
-    private var wasInDiscMenu = false
-    private val discMenuPoll = object : Runnable {
-        override fun run() {
-            if (currentItem?.isDiscImage != true || !player.hasMedia()) return
-            val inMenu = isInDiscMenu()
-            if (wasInDiscMenu && !inMenu) scheduleTrackRule()
-            wasInDiscMenu = inMenu
-            handler.postDelayed(this, 1000)
-        }
-    }
+    fun selectSpuTrack(id: Int) = tracks.selectSpu(currentItem?.key, id)
 
     // ---------- スリープタイマー ----------
 
@@ -1523,23 +1382,8 @@ class PlaybackService : Service() {
                     return
                 }
                 errorStreak = 0
-                if (discTitlePending == playGeneration) {
-                    discTitlePending = -1
-                    scheduleMainTitle(playGeneration, 0)
-                }
-                if (discMenuWatch == playGeneration) {
-                    discMenuWatch = -1
-                    watchEmptyDiscMenu(playGeneration, 0, 0)
-                }
-                if (discJumpPending == playGeneration) {
-                    discJumpPending = -1
-                    jumpToDiscMenu(playGeneration, 0, 0)
-                }
-                scheduleTrackRule()
-                if (currentItem?.isDiscImage == true) {
-                    handler.removeCallbacks(discMenuPoll)
-                    handler.post(discMenuPoll)
-                }
+                disc.onPlaying(playGeneration)
+                tracks.schedule()
                 if (player.rate != rate) player.rate = rate
                 if (player.volume != volume) player.setVolume(volume)
                 handler.removeCallbacks(saveTask)
@@ -1565,7 +1409,7 @@ class PlaybackService : Service() {
                 updateSession()
             }
             MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESSelected ->
-                if (e.esChangedType == IMedia.Track.Type.Audio || e.esChangedType == IMedia.Track.Type.Text) scheduleTrackRule()
+                if (e.esChangedType == IMedia.Track.Type.Audio || e.esChangedType == IMedia.Track.Type.Text) tracks.schedule()
             MediaPlayer.Event.LengthChanged -> setLength(e.lengthChanged)
             MediaPlayer.Event.TimeChanged -> {
                 if (lengthMs <= 0) setLength(player.length)
@@ -1680,8 +1524,7 @@ class PlaybackService : Service() {
     fun addSubtitle(file: File) {
         val item = currentItem ?: return
         addedSubtitles.getOrPut(item.key) { mutableListOf() }.add(0, file)
-        // 前に字幕を「オフ」にしていても、追加した字幕を出す
-        chosenSpu.remove(item.key)
+        tracks.onSubtitleAdded(item.key)
         player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true)
     }
 
