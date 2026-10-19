@@ -64,8 +64,11 @@ object PopupGeometry {
     /** 端にしまったときの x（[visible] の幅だけ画面に残す） */
     fun stashedX(side: Int, w: Int, screenW: Int, visible: Int): Int = if (side < 0) visible - w else screenW - visible
 
-    /** しまった小窓を戻すときの x（端から [margin] 離す） */
-    fun unstashedX(side: Int, w: Int, screenW: Int, margin: Int): Int = if (side < 0) margin else screenW - w - margin
+    /** しまった小窓を戻すときの x（端から [margin] 離す。画面いっぱいの大きさなら、はみ出さない所まで） */
+    fun unstashedX(side: Int, w: Int, screenW: Int, margin: Int): Int {
+        val x = if (side < 0) margin else screenW - w - margin
+        return x.coerceIn(minOf(0, screenW - w), maxOf(0, screenW - w))
+    }
 
     /** 真ん中のボタンの大きさ（dp）。popup_player.xml と同じ */
     private const val BUTTON_DP = 40
@@ -81,20 +84,25 @@ object PopupGeometry {
      * 右上のボタン・右下のつまみ・下のバーと重ならない数だけ出す
      */
     fun buttonCount(widthDp: Float, heightDp: Float): Int =
-        listOf(5, 3, 1).firstOrNull { rowCenterY(widthDp, heightDp, it) != null } ?: 0
+        listOf(5, 3, 1).firstOrNull { rowCenter(widthDp, heightDp, it) != null } ?: 0
 
     /**
-     * 真ん中のボタンの列の、縦の中心（dp。窓の上から）。ふつうは窓の真ん中で、右上のボタンの下に
-     * かかるときは、その下まで下げる。どこに置いても重なるなら null
+     * 真ん中のボタンの列の中心（dp。窓の左上から、x to y）。ふつうは窓の真ん中で、右上のボタンにかかるときは
+     * その下まで下げる。下げられないほど低い窓で再生ボタンだけのときは、右上のボタンの左へずらす。
+     * どこに置いても重なるなら null
      */
-    fun rowCenterY(widthDp: Float, heightDp: Float, count: Int): Float? {
+    fun rowCenter(widthDp: Float, heightDp: Float, count: Int): Pair<Float, Float>? {
         if (count <= 0) return null
         val row = (count - 1) * BUTTON_DP + PLAY_BUTTON_DP
         if (widthDp < row + 8) return null
+        val cornersLeft = widthDp - 2 * CORNER_DP
+        // 右下のつまみ・下のバー（3dp）にかからないか
+        fun clearOfBottom(right: Float, cy: Float, rightHalf: Float) =
+            cy + PLAY_BUTTON_DP / 2 <= heightDp - 4 && !(right > widthDp - RESIZE_DP && cy + rightHalf > heightDp - RESIZE_DP)
+
         // 列の右の端と、いちばん右のボタンの高さの半分
         val right = (widthDp + row) / 2
         val rightHalf = (if (count == 1) PLAY_BUTTON_DP else BUTTON_DP) / 2f
-        val cornersLeft = widthDp - 2 * CORNER_DP
         var cy = heightDp / 2
         if (right + 4 > cornersLeft) {
             // 右上のボタンの下に入る。真ん中の再生ボタンまでかかるなら、再生ボタンの高さで避ける
@@ -102,10 +110,14 @@ object PopupGeometry {
             val half = if (playRight + 4 > cornersLeft) PLAY_BUTTON_DP / 2f else rightHalf
             cy = maxOf(cy, CORNER_DP + 2 + half)
         }
-        // 下のバー（3dp）にかからない
-        if (cy + PLAY_BUTTON_DP / 2 > heightDp - 4) return null
-        // 右下のつまみにかからない
-        if (right > widthDp - RESIZE_DP && cy + rightHalf > heightDp - RESIZE_DP) return null
-        return cy
+        if (clearOfBottom(right, cy, rightHalf)) return widthDp / 2 to cy
+
+        // 再生ボタンだけなら、真ん中の高さのまま右上のボタンの左へ
+        if (count == 1) {
+            val cx = cornersLeft - 4 - PLAY_BUTTON_DP / 2
+            val y = heightDp / 2
+            if (cx - PLAY_BUTTON_DP / 2 >= 4 && clearOfBottom(cx + PLAY_BUTTON_DP / 2, y, rightHalf)) return cx to y
+        }
+        return null
     }
 }
