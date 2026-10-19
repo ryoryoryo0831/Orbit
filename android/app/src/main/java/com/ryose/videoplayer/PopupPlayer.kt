@@ -1,5 +1,6 @@
 package com.ryose.videoplayer
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -17,7 +18,10 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.ProgressBar
 import androidx.core.view.isVisible
 import org.videolan.libvlc.MediaPlayer
@@ -102,6 +106,14 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private lateinit var rewindButton: View
     private lateinit var forwardButton: View
     private lateinit var progress: ProgressBar
+    private lateinit var buttonRow: View
+    /** 端にしまったときに残る帯 */
+    private lateinit var stashTab: ImageView
+
+    /** 端にしまっているか（-1：左の端、1：右の端、0：しまっていない）。再生は続ける */
+    private var stashSide = 0
+    /** 端へしまう・戻すときに、小窓をすべらせる */
+    private var slideAnimator: ValueAnimator? = null
 
     /** 長い方の辺の長さ（px） */
     private var size = 0
@@ -130,6 +142,9 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         rewindButton = view.findViewById(R.id.popupRewind)
         forwardButton = view.findViewById(R.id.popupForward)
         progress = view.findViewById(R.id.popupProgress)
+        buttonRow = view.findViewById(R.id.popupRow)
+        stashTab = view.findViewById(R.id.popupStashTab)
+        stashSide = 0
         setupButtons(view)
         setupTouch(view.findViewById(R.id.popupTouch))
         setupResizeHandle(view.findViewById(R.id.popupResize))
@@ -164,9 +179,6 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         }
         root = view
         view.keepScreenOn = service.isPlaying
-        // 窓の中身（ボタンの後ろの暗い幕など）を、角の丸い形に切り抜く
-        view.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-        view.clipToOutline = true
 
         val subtitles = view.findViewById<android.view.SurfaceView>(R.id.popupSubtitles)
         subtitles.setZOrderMediaOverlay(true)
@@ -203,8 +215,11 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         root = null
         layoutAspect = null
         handler.removeCallbacksAndMessages(null)
+        slideAnimator?.cancel()
         service.removeListener(this)
+        // しまっていたら、戻したときの場所を覚える（次は端にしまわずに出す）
         savePlacement()
+        stashSide = 0
         // 映像の出し先が無くなるので映像を止めておく（全画面に戻ったら、そちらで戻す）
         runCatching { service.setVideoEnabled(false) }
         videoFrame.removeOnLayoutChangeListener(videoSizeListener)
@@ -300,7 +315,11 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     /** 小窓の幅に合わせて、出すボタンを増やしたり減らしたりする */
     private fun updateButtons() {
         if (root == null) return
-        val count = PopupGeometry.buttonCount(params.width / density, params.height / density)
+        val wDp = params.width / density
+        val hDp = params.height / density
+        val count = PopupGeometry.buttonCount(wDp, hDp)
+        // 右上のボタンにかかるときは、列を下へずらす
+        buttonRow.translationY = PopupGeometry.rowCenterY(wDp, hDp, count)?.let { (it - hDp / 2) * density } ?: 0f
         playButton.isVisible = count >= 1
         rewindButton.isVisible = count >= 3
         forwardButton.isVisible = count >= 3
@@ -311,6 +330,8 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
 
     private fun setControlsVisible(visible: Boolean) {
         if (root == null) return
+        // 端にしまっている間はボタンを出さない（帯のタップで戻す）
+        if (visible && stashSide != 0) return
         controlsVisible = visible
         controls.animate().cancel()
         if (visible) {
@@ -329,8 +350,8 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     }
 
     // ---------- 移動と大きさ ----------
-    // ドラッグ：移動（画面の端に寄せられる）／ピンチ・右下のつまみ：大きさ
-    // タップ：ボタンを出す・隠す／ダブルタップ：再生・一時停止
+    // ドラッグ：移動（半分より多く左右の外へ出して離すと、端にしまう）／ピンチ・右下のつまみ：大きさ
+    // タップ：ボタンを出す・隠す（しまっているときは戻す）／ダブルタップ：再生・一時停止
 
     private fun setupTouch(touch: View) {
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop
@@ -356,12 +377,12 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
             override fun onDown(e: MotionEvent) = true
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                setControlsVisible(!controlsVisible)
+                if (stashSide != 0) unstash() else setControlsVisible(!controlsVisible)
                 return true
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                service.togglePlay()
+                if (stashSide != 0) unstash() else service.togglePlay()
                 return true
             }
         })
@@ -382,11 +403,24 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
                 MotionEvent.ACTION_MOVE -> if (!scaling && e.pointerCount == 1) {
                     val dx = e.rawX - downX
                     val dy = e.rawY - downY
-                    if (!dragging && hypot(dx, dy) > slop) dragging = true
+                    if (!dragging && hypot(dx, dy) > slop) {
+                        dragging = true
+                        // すべっている途中なら、そこから指に付いて動く（タップだけなら、すべり終わるまで待つ）
+                        if (slideAnimator?.isRunning == true) {
+                            slideAnimator?.cancel()
+                            startX = params.x - dx.roundToInt()
+                            startY = params.y - dy.roundToInt()
+                        }
+                        // しまっていた小窓を引き出しはじめた（離したときに、しまうかをまた決める）
+                        if (stashSide != 0) {
+                            stashSide = 0
+                            stashTab.isVisible = false
+                        }
+                    }
                     if (dragging) moveTo(startX + dx.roundToInt(), startY + dy.roundToInt())
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (dragging || scaling) savePlacement()
+                    if (dragging) settle() else if (scaling) savePlacement()
                     dragging = false
                 }
             }
@@ -427,6 +461,7 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
 
     private fun applySize(newSize: Int, keepCenter: Boolean) {
         val view = root ?: return
+        slideAnimator?.cancel()
         val (sw, sh) = screenSize()
         val oldW = params.width
         val oldH = params.height
@@ -441,7 +476,8 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         params.width = w
         params.height = h
         val (cx, cy) = PopupGeometry.clampPosition(x, y, w, h, sw, sh, keepVisible())
-        params.x = cx
+        // しまっている間は、大きさや画面の向きが変わっても端にしまったまま
+        params.x = if (stashSide != 0) PopupGeometry.stashedX(stashSide, w, sw, stashVisible()) else cx
         params.y = cy
         runCatching { wm.updateViewLayout(view, params) }
         updateButtons()
@@ -454,18 +490,87 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
         applySize(size, keepCenter = true)
     }
 
+    /** ドラッグ中：端にしまえるように、帯の幅が残るところまで外へ出せる（離したら settle で決める） */
     private fun moveTo(x: Int, y: Int) {
         val view = root ?: return
         val (sw, sh) = screenSize()
-        val (cx, cy) = PopupGeometry.clampPosition(x, y, params.width, params.height, sw, sh, keepVisible())
+        val (cx, cy) = PopupGeometry.clampPosition(x, y, params.width, params.height, sw, sh, stashVisible())
         params.x = cx
         params.y = cy
         runCatching { wm.updateViewLayout(view, params) }
     }
 
-    private fun savePlacement() {
+    /** ドラッグを離した：半分より多く左右の外に出ていれば端にしまい、そうでなければ出すぎた分を戻す */
+    private fun settle() {
+        val (sw, sh) = screenSize()
+        val (cx, cy) = PopupGeometry.clampPosition(params.x, params.y, params.width, params.height, sw, sh, keepVisible())
+        val side = PopupGeometry.stashSide(params.x, params.width, sw)
+        if (side != 0) {
+            stash(side, cy)
+        } else {
+            slideTo(cx, cy)
+            savePlacement(cx, cy)
+        }
+    }
+
+    /** 端にしまう：帯だけ残して画面の外へ。再生は続ける */
+    private fun stash(side: Int, y: Int) {
+        val (sw, _) = screenSize()
+        setControlsVisible(false)
+        stashSide = side
+        // 帯は画面に残る側（左にしまったら小窓の右の端）に出し、引き出す向きの山形にする
+        (stashTab.layoutParams as FrameLayout.LayoutParams).gravity = if (side < 0) Gravity.END else Gravity.START
+        stashTab.setImageResource(if (side < 0) R.drawable.ic_chevron_right else R.drawable.ic_chevron_left)
+        stashTab.requestLayout()
+        stashTab.isVisible = true
+        slideTo(PopupGeometry.stashedX(side, params.width, sw, stashVisible()), y)
+        savePlacement(y = y)
+    }
+
+    /** しまった小窓を戻す（しまった側の端に寄せて出す） */
+    private fun unstash() {
+        val side = stashSide
+        if (side == 0) return
+        val (sw, _) = screenSize()
+        stashSide = 0
+        stashTab.isVisible = false
+        val x = PopupGeometry.unstashedX(side, params.width, sw, stashMargin())
+        slideTo(x, params.y)
+        savePlacement(x, params.y)
+    }
+
+    private fun slideTo(x: Int, y: Int) {
+        val view = root ?: return
+        slideAnimator?.cancel()
+        val fromX = params.x
+        val fromY = params.y
+        if (fromX == x && fromY == y) return
+        slideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                if (root == null) return@addUpdateListener
+                val f = it.animatedValue as Float
+                params.x = fromX + ((x - fromX) * f).roundToInt()
+                params.y = fromY + ((y - fromY) * f).roundToInt()
+                runCatching { wm.updateViewLayout(view, params) }
+            }
+            start()
+        }
+    }
+
+    /**
+     * 大きさと場所を覚える。[x]・[y] を省くと今の場所。
+     * しまっている間は、戻したときの場所を覚える（次に出すときは、しまわずに端に寄せて出す）
+     */
+    private fun savePlacement(x: Int? = null, y: Int? = null) {
         if (!::params.isInitialized) return
-        AppSettings.setPopupPlacement(service, (size / density).roundToInt(), params.x, params.y)
+        val sx = if (stashSide != 0) {
+            PopupGeometry.unstashedX(stashSide, params.width, screenSize().first, stashMargin())
+        } else {
+            x ?: params.x
+        }
+        AppSettings.setPopupPlacement(service, (size / density).roundToInt(), sx, y ?: params.y)
     }
 
     private fun setVoutSize(width: Int, height: Int) {
@@ -475,6 +580,10 @@ class PopupPlayer(private val service: PlaybackService) : PlaybackService.Listen
     private fun minSize() = (PopupGeometry.MIN_SIZE_DP * density).roundToInt()
 
     private fun keepVisible() = (PopupGeometry.KEEP_VISIBLE_DP * density).roundToInt()
+
+    private fun stashVisible() = (PopupGeometry.STASH_VISIBLE_DP * density).roundToInt()
+
+    private fun stashMargin() = (PopupGeometry.STASH_MARGIN_DP * density).roundToInt()
 
     private fun currentAspect(): Float {
         val vt = service.currentVideoTrack() ?: return aspect

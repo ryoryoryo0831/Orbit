@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  自由な小窓の窓（角を少しだけ丸くする）。PopupPlayer で、この形に窓の中身を切り抜く。
-  映像（SurfaceView）は角丸に切り抜けないので、映像は少し内側に置き、角はこの黒い縁で隠す
+  自由な小窓の窓（映像が出るまでの黒）。映像（SurfaceView）は角を丸く切り抜けないので、角は四角。
+  前は角を丸くして映像を少し内側に置いていたが、まわりに黒い隙間が見えるので、窓いっぱいに映すことにした
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <solid android:color="@android:color/black" />
-    <corners android:radius="@dimen/popup_corner_radius" />
 </shape>

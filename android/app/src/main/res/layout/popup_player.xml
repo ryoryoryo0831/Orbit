@@ -7,13 +7,13 @@
 
     <!--
         映像と字幕を描く場所。libVLC の VLCVideoLayout は、画面（Activity）の中でないと
-        描く大きさを VLC に伝えないので、小窓では自分で伝える（PopupPlayer.kt）
+        描く大きさを VLC に伝えないので、小窓では自分で伝える（PopupPlayer.kt）。
+        窓いっぱいに置く（窓の比は動画に合わせてあるので、黒い隙間が出ない）
     -->
     <FrameLayout
         android:id="@+id/popupVideo"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_margin="@dimen/popup_video_inset">
+        android:layout_height="match_parent">
 
         <SurfaceView
             android:id="@+id/popupSurface"
@@ -39,12 +39,14 @@
         android:layout_height="match_parent"
         android:background="@drawable/bg_popup_controls">
 
+        <!-- 閉じる：全画面ボタンの左隣（PopupGeometry の CORNER_DP） -->
         <ImageButton
             android:id="@+id/popupClose"
             style="@style/PopupButton"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:layout_gravity="top|start"
+            android:layout_gravity="top|end"
+            android:layout_marginEnd="36dp"
             android:contentDescription="@string/close"
             android:padding="7dp"
             android:src="@drawable/ic_close" />
@@ -59,7 +61,9 @@
             android:padding="7dp"
             android:src="@drawable/ic_fullscreen" />
 
+        <!-- 真ん中のボタンの列。右上のボタンにかかるときは下へずらす（PopupGeometry.rowCenterY） -->
         <LinearLayout
+            android:id="@+id/popupRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
@@ -119,6 +123,20 @@
             android:progressTint="@color/accent"
             android:progressBackgroundTint="#66FFFFFF" />
     </FrameLayout>
+
+    <!--
+        端にしまったときに、画面に残る帯（PopupGeometry の STASH_VISIBLE_DP と同じ幅）。
+        しまった側と反対の端に出す。タッチは受け取らず、下のレイヤーに渡す（タップで戻す）
+    -->
+    <ImageView
+        android:id="@+id/popupStashTab"
+        android:layout_width="28dp"
+        android:layout_height="match_parent"
+        android:background="#B3000000"
+        android:importantForAccessibility="no"
+        android:scaleType="center"
+        android:src="@drawable/ic_chevron_right"
+        android:visibility="gone" />
 
     <!-- 映像を出せなかったときだけ、どこで止まったかを出す（不具合を調べるため） -->
     <TextView

@@ -3,7 +3,4 @@
     <!-- 音楽の画面の左右の余白 -->
     <dimen name="audio_side">24dp</dimen>
     <dimen name="audio_side_controls">16dp</dimen>
-    <!-- 自由な小窓の角の丸み。映像はその内側に popup_video_inset だけ控えて置く（半径の 3 割ほど控えると、映像の角が縁に隠れる） -->
-    <dimen name="popup_corner_radius">6dp</dimen>
-    <dimen name="popup_video_inset">2dp</dimen>
 </resources>

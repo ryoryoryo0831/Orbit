@@ -1,6 +1,7 @@
 package com.ryose.videoplayer
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PopupGeometryTest {
@@ -49,12 +50,43 @@ class PopupGeometryTest {
         assertEquals(5, PopupGeometry.buttonCount(240f, 135f))
         assertEquals(5, PopupGeometry.buttonCount(220f, 124f))
         assertEquals(3, PopupGeometry.buttonCount(210f, 118f))
-        // 左上・右上のボタンと重なるので、3 つは出さない
-        assertEquals(1, PopupGeometry.buttonCount(180f, 101f))
-        assertEquals(1, PopupGeometry.buttonCount(132f, 74f))
+        // 右上のボタン（閉じる・全画面）の下まで列を下げれば 3 つ並ぶ
+        assertEquals(3, PopupGeometry.buttonCount(180f, 101f))
+        // 下げても下のバーにかかるので出さない（ダブルタップで再生・一時停止）
+        assertEquals(0, PopupGeometry.buttonCount(132f, 74f))
         // 縦長の動画は高さがあるので、幅が足りれば並べられる
         assertEquals(3, PopupGeometry.buttonCount(140f, 249f))
-        // 一番小さいときは真ん中のボタンを出さない（ダブルタップで再生・一時停止）
+        // 一番小さいときは真ん中のボタンを出さない
         assertEquals(0, PopupGeometry.buttonCount(96f, 54f))
+    }
+
+    @Test
+    fun ボタンの列は右上のボタンにかかるときだけ下げる() {
+        // 窓の真ん中のままで重ならない
+        assertEquals(62f, PopupGeometry.rowCenterY(220f, 124f, 5)!!, 0.01f)
+        assertEquals(124.5f, PopupGeometry.rowCenterY(140f, 249f, 3)!!, 0.01f)
+        // 真ん中（50.5）だと右上のボタンにかかるので、その下（36 + 2 + 再生ボタンの半分 24）へ
+        assertEquals(62f, PopupGeometry.rowCenterY(180f, 101f, 3)!!, 0.01f)
+        assertNull(PopupGeometry.rowCenterY(132f, 74f, 1))
+        assertNull(PopupGeometry.rowCenterY(300f, 200f, 0))
+    }
+
+    @Test
+    fun 半分より多く左右の外に出して離すと端にしまう() {
+        // 左：真ん中（-200 + 150 = -50）が画面の外
+        assertEquals(-1, PopupGeometry.stashSide(-200, 300, 1080))
+        // 真ん中が画面の中ならしまわない
+        assertEquals(0, PopupGeometry.stashSide(-100, 300, 1080))
+        assertEquals(0, PopupGeometry.stashSide(900, 300, 1080))
+        // 右：真ん中（950 + 150 = 1100）が画面の外
+        assertEquals(1, PopupGeometry.stashSide(950, 300, 1080))
+    }
+
+    @Test
+    fun しまうと帯だけ残し戻すと端に寄せる() {
+        assertEquals(-272, PopupGeometry.stashedX(-1, 300, 1080, 28))
+        assertEquals(1052, PopupGeometry.stashedX(1, 300, 1080, 28))
+        assertEquals(8, PopupGeometry.unstashedX(-1, 300, 1080, 8))
+        assertEquals(772, PopupGeometry.unstashedX(1, 300, 1080, 8))
     }
 }

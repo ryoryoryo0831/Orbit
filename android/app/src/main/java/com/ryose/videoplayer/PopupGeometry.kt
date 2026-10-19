@@ -46,25 +46,66 @@ object PopupGeometry {
         return x.coerceIn(kx - w, screenW - kx) to y.coerceIn(ky - h, screenH - ky)
     }
 
+    /** 端にしまったときに見えている帯の幅（dp）。popup_player.xml の popupStashTab と同じ */
+    const val STASH_VISIBLE_DP = 28
+    /** しまった小窓を戻すときに、画面の端から離す幅（dp） */
+    const val STASH_MARGIN_DP = 8
+
+    /**
+     * 指を離したときに、小窓の半分より多くが画面の左右の外に出ていれば、その側の端にしまう
+     * （-1：左の端、1：右の端、0：しまわない）
+     */
+    fun stashSide(x: Int, w: Int, screenW: Int): Int = when {
+        x + w / 2 < 0 -> -1
+        x + w / 2 > screenW -> 1
+        else -> 0
+    }
+
+    /** 端にしまったときの x（[visible] の幅だけ画面に残す） */
+    fun stashedX(side: Int, w: Int, screenW: Int, visible: Int): Int = if (side < 0) visible - w else screenW - visible
+
+    /** しまった小窓を戻すときの x（端から [margin] 離す） */
+    fun unstashedX(side: Int, w: Int, screenW: Int, margin: Int): Int = if (side < 0) margin else screenW - w - margin
+
     /** 真ん中のボタンの大きさ（dp）。popup_player.xml と同じ */
     private const val BUTTON_DP = 40
     private const val PLAY_BUTTON_DP = 48
-    /** 左上（閉じる）・右上（全画面）のボタンの大きさ（dp） */
+    /** 右上のボタン（閉じる・全画面。横に 2 つ並ぶ）の大きさ（dp） */
     private const val CORNER_DP = 36
+    /** 右下のつまみの大きさ（dp） */
+    private const val RESIZE_DP = 24
 
     /**
      * 小窓の大きさに合わせて出す、真ん中のボタンの数
      * （5：戻る・前へ・再生・次へ・進む／3：戻る・再生・進む／1：再生だけ／0：なし。ダブルタップで再生・一時停止）。
-     * 左上・右上のボタンと重ならない数だけ出す（横に避けられるか、窓の高さがあって上下に避けられるとき）
+     * 右上のボタン・右下のつまみ・下のバーと重ならない数だけ出す
      */
-    fun buttonCount(widthDp: Float, heightDp: Float): Int {
-        fun fits(count: Int): Boolean {
-            val row = (count - 1) * BUTTON_DP + PLAY_BUTTON_DP
-            if (widthDp < row + 8) return false
-            val besideCorners = widthDp >= row + 2 * CORNER_DP + 8
-            val belowCorners = heightDp / 2 - PLAY_BUTTON_DP / 2 >= CORNER_DP + 2
-            return besideCorners || belowCorners
+    fun buttonCount(widthDp: Float, heightDp: Float): Int =
+        listOf(5, 3, 1).firstOrNull { rowCenterY(widthDp, heightDp, it) != null } ?: 0
+
+    /**
+     * 真ん中のボタンの列の、縦の中心（dp。窓の上から）。ふつうは窓の真ん中で、右上のボタンの下に
+     * かかるときは、その下まで下げる。どこに置いても重なるなら null
+     */
+    fun rowCenterY(widthDp: Float, heightDp: Float, count: Int): Float? {
+        if (count <= 0) return null
+        val row = (count - 1) * BUTTON_DP + PLAY_BUTTON_DP
+        if (widthDp < row + 8) return null
+        // 列の右の端と、いちばん右のボタンの高さの半分
+        val right = (widthDp + row) / 2
+        val rightHalf = (if (count == 1) PLAY_BUTTON_DP else BUTTON_DP) / 2f
+        val cornersLeft = widthDp - 2 * CORNER_DP
+        var cy = heightDp / 2
+        if (right + 4 > cornersLeft) {
+            // 右上のボタンの下に入る。真ん中の再生ボタンまでかかるなら、再生ボタンの高さで避ける
+            val playRight = widthDp / 2 + PLAY_BUTTON_DP / 2
+            val half = if (playRight + 4 > cornersLeft) PLAY_BUTTON_DP / 2f else rightHalf
+            cy = maxOf(cy, CORNER_DP + 2 + half)
         }
-        return listOf(5, 3, 1).firstOrNull { fits(it) } ?: 0
+        // 下のバー（3dp）にかからない
+        if (cy + PLAY_BUTTON_DP / 2 > heightDp - 4) return null
+        // 右下のつまみにかからない
+        if (right > widthDp - RESIZE_DP && cy + rightHalf > heightDp - RESIZE_DP) return null
+        return cy
     }
 }
