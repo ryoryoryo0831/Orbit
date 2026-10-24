@@ -113,7 +113,7 @@ object VlcThumbnailer {
                 mp.media = media
                 media.release()
                 mp.play()
-                done.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                done.await(if (isNetwork) NETWORK_TIMEOUT_MS else TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 finished = true
                 return result
             } finally {
@@ -121,10 +121,18 @@ object VlcThumbnailer {
             }
         }
 
+        /** NAS・DLNA・URL の動画か（端末内のファイルではない） */
+        private val isNetwork: Boolean get() = path == null && uri.scheme?.lowercase() in NETWORK_SCHEMES
+
         private fun openMedia(lib: org.videolan.libvlc.interfaces.ILibVLC): Media? = when {
             path != null && File(path).canRead() -> Media(lib, path)
             uri.scheme == "content" -> runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
                 ?.let { p -> pfd = p; Media(lib, p.fileDescriptor) }
+            // ネットワークの動画は、再生と同じログイン情報で開く。読み込みは先頭と 1 秒あたりだけなので、先読みは短く
+            isNetwork -> Media(lib, uri).also { m ->
+                ServerStore(context).optionsFor(uri).forEach { m.addOption(it) }
+                m.addOption(":network-caching=1500")
+            }
             else -> null
         }
 
@@ -314,6 +322,9 @@ object VlcThumbnailer {
     private const val DEFAULT_W = 640
     private const val DEFAULT_H = 360
     private const val TIMEOUT_MS = 8_000L
+    /** ネットワークの動画は、つなぐ時間があるので長めに */
+    private const val NETWORK_TIMEOUT_MS = 15_000L
+    private val NETWORK_SCHEMES = setOf("smb", "ftp", "ftps", "ftpes", "sftp", "http", "https", "nfs", "upnp")
     /** 暗いコマを飛ばすのは、ここまで（約 2 秒分） */
     private const val MAX_FRAMES = 60
 

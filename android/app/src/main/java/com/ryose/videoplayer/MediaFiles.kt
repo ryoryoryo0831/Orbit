@@ -230,10 +230,11 @@ object MediaFiles {
                 val durCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 while (c.moveToNext()) {
                     val path = c.getString(dataCol)
-                    val title = c.getString(titleCol)?.takeIf { it.isNotBlank() }
+                    // タグが Shift_JIS のままの曲は、文字化けしているので読み直す
+                    val title = TagText.fix(c.getString(titleCol))?.takeIf { it.isNotBlank() }
                         ?: path?.let { File(it).nameWithoutExtension } ?: "(名前なし)"
-                    val artist = c.getString(artistCol)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "不明なアーティスト"
-                    val album = c.getString(albumCol)?.takeIf { it.isNotBlank() } ?: "不明なアルバム"
+                    val artist = TagText.fix(c.getString(artistCol))?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "不明なアーティスト"
+                    val album = TagText.fix(c.getString(albumCol))?.takeIf { it.isNotBlank() } ?: "不明なアルバム"
                     val uri = ContentUris.withAppendedId(collection, c.getLong(idCol))
                     result += Song(
                         item = PlaylistItem(uri, title, path, c.getLong(durCol)),

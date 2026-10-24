@@ -309,12 +309,13 @@ class MediaAdapter(
                     item.isDiscImage -> R.drawable.ic_album
                     else -> R.drawable.ic_movie
                 }
-                if (item.isNetwork) {
-                    // ネットワーク上のファイルはサムネイルを作らない（全体を読み込んでしまうため）
+                if (item.isNetwork && (item.isAudio || item.isDiscImage)) {
+                    // ネットワーク上の音楽・ディスクイメージはサムネイルを作らない
                     holder.thumb.dispose()
                     holder.showFallback(fallbackIcon)
                 } else {
-                    // 読み込むまで・画像が無いときは、アイコンを引き伸ばさずに真ん中に小さく出す
+                    // 読み込むまで・画像が無いときは、アイコンを引き伸ばさずに真ん中に小さく出す。
+                    // ネットワークの動画は VLC で 1 コマ取り出して覚える（App.kt の VideoThumbFetcher）
                     holder.showFallback(fallbackIcon)
                     val data: Any? = if (item.isAudio) item.path?.let { AudioArt(it) } else VideoThumb(item.path, item.uri)
                     holder.thumb.load(data) {

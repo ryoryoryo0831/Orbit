@@ -171,7 +171,8 @@ class DiscController(private val handler: Handler, private val host: Host) {
     }
 
     private fun scheduleMainTitle(gen: Int, tries: Int) {
-        handler.postDelayed({ chooseMainTitle(gen, tries) }, 400)
+        // 始まりが遅く感じないよう、細かく見て、タイトルの一覧が分かったらすぐ本編へ（以前は 0.4 秒ごと）
+        handler.postDelayed({ chooseMainTitle(gen, tries) }, 150)
     }
 
     /**
@@ -184,12 +185,12 @@ class DiscController(private val handler: Handler, private val host: Host) {
         jumpGen = -1
         val titles = rules()
         if (titles.isEmpty()) {
-            if (tries < 10) scheduleMainTitle(gen, tries + 1) else seekStart(gen)
+            if (tries < 27) scheduleMainTitle(gen, tries + 1) else seekStart(gen)
             return
         }
         val main = resumeTitle?.takeIf { it in titles.indices && !titles[it].isMenu } ?: DiscRules.mainTitle(titles)
         resumeTitle = null
-        PlaybackLog.add("DVD：タイトル $main を選ぶ（${titles.size} 個のうち）")
+        PlaybackLog.add("DVD：タイトル $main を選ぶ（${titles.size} 個のうち、$tries 回目）")
         if (main != null && main != host.vlcTitle()) {
             host.setVlcTitle(main)
             host.onTitleChanged()
@@ -202,7 +203,7 @@ class DiscController(private val handler: Handler, private val host: Host) {
         val ms = startMs
         startMs = 0
         if (ms <= 0) return
-        handler.postDelayed({ if (gen == host.generation) host.setVlcTime(ms) }, 500)
+        handler.postDelayed({ if (gen == host.generation) host.setVlcTime(ms) }, 250)
     }
 
     /** DVD の本編などに移ったとき（メニューから出たとき）に知らせる。VLC はタイトルが変わったことを知らせないので 1 秒ごとに見る */

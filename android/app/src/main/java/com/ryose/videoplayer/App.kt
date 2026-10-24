@@ -154,9 +154,11 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         val context = options.context
         val modified = data.path?.let { File(it).lastModified() } ?: 0L
         val key = data.path ?: data.uri.toString()
-        val file = ThumbCache.getOrCreate(context, key, modified, rememberFailure = false) {
+        // ネットワークの動画は Android のサムネイル作りでは開けないので、最初から VLC で（結果は端末に覚えておく）
+        val isNetwork = data.path == null && data.uri.scheme?.lowercase() in setOf("smb", "ftp", "ftps", "ftpes", "sftp", "http", "https", "nfs", "upnp")
+        val file = (if (isNetwork) null else ThumbCache.getOrCreate(context, key, modified, rememberFailure = false) {
             systemThumbnail(context) ?: frameFromVideo(context)
-        } ?: withContext(VLC_DISPATCHER) {
+        }) ?: withContext(VLC_DISPATCHER) {
             // Android が読めない形式（WMV・FLV・一部の AVI など）は、VLC で 1 コマを取り出す。
             // 時間がかかるので、ほかのサムネイル作りの枠とは別に 1 本ずつ。スクロールして要らなくなったものは始めない
             coroutineContext.ensureActive()

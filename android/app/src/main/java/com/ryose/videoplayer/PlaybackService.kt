@@ -1577,9 +1577,9 @@ class PlaybackService : Service() {
             if (item.path != null) r.setDataSource(item.path) else r.setDataSource(this, item.uri)
             val art = if (item.isAudio) r.embeddedPicture?.let { decodeArt(it) } else null
             TrackMeta(
-                title = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { item.isAudio && it.isNotBlank() },
-                artist = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() },
-                album = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.takeIf { it.isNotBlank() },
+                title = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))?.takeIf { item.isAudio && it.isNotBlank() },
+                artist = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))?.takeIf { it.isNotBlank() },
+                album = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))?.takeIf { it.isNotBlank() },
                 art = art,
             )
         } catch (_: Exception) {
