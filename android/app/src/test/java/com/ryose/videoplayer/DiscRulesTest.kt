@@ -67,9 +67,9 @@ class DiscRulesTest {
         assertEquals(4, DiscRules.emptyMenuSeconds(inMenu = true, videoTracks = 0, previous = 3))
         // ディスクを開いている途中など、メニューかどうか分からない間は数え直し
         assertEquals(0, DiscRules.emptyMenuSeconds(inMenu = false, videoTracks = 0, previous = 3))
-        // 6 秒たったら本編へ（PlaybackService が使うしきい値）
-        var seconds = 0
-        repeat(DiscRules.EMPTY_MENU_SECONDS) { seconds = DiscRules.emptyMenuSeconds(true, 0, seconds)!! }
-        assertEquals(DiscRules.EMPTY_MENU_SECONDS, seconds)
+        // 決まった回数たったら本編へ（DiscController が使うしきい値）
+        var ticks = 0
+        repeat(DiscRules.EMPTY_MENU_TICKS) { ticks = DiscRules.emptyMenuSeconds(true, 0, ticks)!! }
+        assertEquals(DiscRules.EMPTY_MENU_TICKS, ticks)
     }
 }

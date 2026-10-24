@@ -1592,7 +1592,9 @@ class PlaybackService : Service() {
                 r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
             )
             TrackMeta(
-                title = tags.title?.takeIf { item.isAudio && it.isNotBlank() },
+                // タグが壊れていて読めない曲は、ファイル名（以前に壊れたタグを名前として覚えた曲も直す）
+                title = (tags.title ?: item.path?.takeIf { TagText.isDestroyed(item.title) }?.let { File(it).nameWithoutExtension })
+                    ?.takeIf { item.isAudio && it.isNotBlank() },
                 artist = tags.artist?.takeIf { it.isNotBlank() },
                 album = tags.album?.takeIf { it.isNotBlank() },
                 art = art,

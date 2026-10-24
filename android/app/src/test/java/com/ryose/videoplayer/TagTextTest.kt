@@ -34,6 +34,16 @@ class TagTextTest {
     }
 
     @Test
+    fun 壊れて戻せないタグは使わない() {
+        // 2026-10-24 の再生の記録にあった実物（端末は「锟斤拷」、ファイルのタグには「�」がそのまま入っていた）
+        assertNull(TagText.fixTags(null, "5. 锟斤拷锟桔傦拷锟桔欙拷锟斤拷锟介壒", null, null).title)
+        assertNull(TagText.fixTags(null, "5. ���ۂ�", null, null).title)
+        // 壊れていなければそのまま
+        assertEquals("夜に駆ける", TagText.fixTags(null, "夜に駆ける", null, null).title)
+        assertEquals("Café del Mar", TagText.fixTags(null, "Café del Mar", null, null).title)
+    }
+
+    @Test
     fun 空やnullはそのまま() {
         assertNull(TagText.fix(null))
         assertEquals("", TagText.fix(""))

@@ -161,13 +161,13 @@ class DiscController(private val handler: Handler, private val host: Host) {
             if (gen != host.generation || host.startedWithoutVideo) return@postDelayed
             val empty = DiscRules.emptyMenuSeconds(isInMenu(), host.videoTracksCount, emptySeconds) ?: return@postDelayed
             when {
-                empty >= DiscRules.EMPTY_MENU_SECONDS -> {
+                empty >= DiscRules.EMPTY_MENU_TICKS -> {
                     PlaybackLog.add("DVD：メニューに映像が無いので本編へ")
                     chooseMainTitle(gen, 0)
                 }
-                tries < 60 -> watchEmptyMenu(gen, tries + 1, empty)
+                tries < 240 -> watchEmptyMenu(gen, tries + 1, empty)
             }
-        }, 1000)
+        }, DiscRules.EMPTY_MENU_TICK_MS)
     }
 
     private fun scheduleMainTitle(gen: Int, tries: Int) {

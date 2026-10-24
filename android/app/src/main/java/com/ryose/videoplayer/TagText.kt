@@ -32,23 +32,38 @@ object TagText {
         val t = fix(title)
         val a = fix(artist)
         val l = fix(album)
-        if (path == null) return Id3Tags.Tags(t, a, l)
         // 端末は文字コードを推測して読むので、Shift_JIS のタグを中国語・韓国語などと取り違えて、
         // 漢字だらけの別の文字列にすることもある（欧文の化けと違って、見ただけでは分からない）。
         // そのため、ファイルのタグを直接読めるものは、いつも読んで比べる
-        val raw = AudioTags.read(path) ?: return Id3Tags.Tags(t, a, l)
-        val result = Id3Tags.Tags(pick(t, raw.title), pick(a, raw.artist), pick(l, raw.album))
-        if (result != Id3Tags.Tags(t, a, l)) PlaybackLog.add("タグを読み直した：端末「$t」→ファイル「${result.title}」")
+        val raw = path?.let { AudioTags.read(it) }
+        val result = Id3Tags.Tags(pick(t, raw?.title), pick(a, raw?.artist), pick(l, raw?.album))
+        if (result != Id3Tags.Tags(t, a, l)) PlaybackLog.add("タグを読み直した：端末「$t」→「${result.title ?: "（壊れているのでファイル名）"}」")
         return result
     }
 
-    /** 端末が読んだ文字列 [cur] と、ファイルから直接読んだ [raw] のどちらを使うか */
-    private fun pick(cur: String?, raw: String?): String? = when {
-        raw.isNullOrBlank() -> cur
-        cur.isNullOrBlank() || looksBroken(cur) -> raw
-        // ファイルのほうが日本語として読めて、端末の読みと違うなら、ファイルのほう（端末の取り違えを直す）
-        raw != cur && raw.any { Id3Tags.isJapanese(it) } -> raw
-        else -> cur
+    /**
+     * タグの文字そのものが壊れていて、どう読んでも元に戻せないか。
+     * 文字コードを間違えて変換したタグ編集ソフトが、読めない文字を「�」（U+FFFD）に置き換えて保存したもの。
+     * 端末はそれをさらに中国語の文字コードと取り違えて「锟斤拷」と出す（「�」の UTF-8 のバイト EF BF BD を GBK で読んだもの）。
+     * 2026-10-24 の再生の記録で、ファイルのタグに「�」がそのまま入っていることを確かめた
+     */
+    fun isDestroyed(text: String?): Boolean =
+        text != null && (text.contains('�') || text.contains("锟斤拷") || text.contains('锟'))
+
+    /**
+     * 端末が読んだ文字列 [cur] と、ファイルから直接読んだ [raw] のどちらを使うか。
+     * どちらも壊れていたら null（呼ぶ側でファイル名などに置き換える）
+     */
+    private fun pick(cur: String?, raw: String?): String? {
+        val usableRaw = raw?.takeIf { it.isNotBlank() && !isDestroyed(it) }
+        val usableCur = cur?.takeIf { !isDestroyed(it) }
+        return when {
+            usableRaw == null -> usableCur
+            usableCur.isNullOrBlank() || looksBroken(usableCur) -> usableRaw
+            // ファイルのほうが日本語として読めて、端末の読みと違うなら、ファイルのほう（端末の取り違えを直す）
+            usableRaw != usableCur && usableRaw.any { Id3Tags.isJapanese(it) } -> usableRaw
+            else -> usableCur
+        }
     }
 
     fun fix(text: String?): String? {

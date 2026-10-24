@@ -61,12 +61,17 @@ data class PlaylistItem(
         .put("duration", durationMs)
 
     companion object {
-        fun fromJson(o: JSONObject) = PlaylistItem(
-            uri = o.getString("uri").toUri(),
-            title = o.optString("title", "動画"),
-            path = if (o.isNull("path")) null else o.getString("path"),
-            durationMs = o.optLong("duration"),
-        )
+        fun fromJson(o: JSONObject): PlaylistItem {
+            val path = if (o.isNull("path")) null else o.getString("path")
+            val title = o.optString("title", "動画")
+            return PlaylistItem(
+                uri = o.getString("uri").toUri(),
+                // 壊れた曲のタグ（「锟斤拷」など）を名前として覚えてしまったもの（1.0.154 まで）は、ファイル名に
+                title = if (path != null && TagText.isDestroyed(title)) File(path).nameWithoutExtension else title,
+                path = path,
+                durationMs = o.optLong("duration"),
+            )
+        }
 
         fun fromFile(file: File, durationMs: Long = 0) =
             PlaylistItem(Uri.fromFile(file), file.name, file.path, durationMs)
