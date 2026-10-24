@@ -33,7 +33,7 @@ object TagText {
         val a = fix(artist)
         val l = fix(album)
         if (path == null || !(looksBroken(t) || looksBroken(a) || looksBroken(l))) return Id3Tags.Tags(t, a, l)
-        val raw = Id3Tags.read(path) ?: return Id3Tags.Tags(t, a, l)
+        val raw = AudioTags.read(path) ?: return Id3Tags.Tags(t, a, l)
         return Id3Tags.Tags(
             if (looksBroken(t)) raw.title ?: t else t,
             if (looksBroken(a)) raw.artist ?: a else a,

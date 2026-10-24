@@ -19,7 +19,6 @@ object Id3Tags {
         ?: runCatching { Charset.forName("Shift_JIS") }.getOrNull()
 
     fun read(path: String): Tags? {
-        if (!path.endsWith(".mp3", ignoreCase = true)) return null
         return runCatching {
             RandomAccessFile(File(path), "r").use { f -> readV2(f) ?: readV1(f) }
         }.getOrNull()
