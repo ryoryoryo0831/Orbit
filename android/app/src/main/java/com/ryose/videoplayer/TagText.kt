@@ -19,6 +19,28 @@ object TagText {
         ?: runCatching { Charset.forName("Shift_JIS") }.getOrNull()
     private val cp1252: Charset? = runCatching { Charset.forName("windows-1252") }.getOrNull()
 
+    /** まだ文字化けして見えるか（日本語が無く、欧文の記号や読み取れなかった印が混ざっている） */
+    private fun looksBroken(text: String?): Boolean =
+        text != null && text.none { Id3Tags.isJapanese(it) } &&
+            text.any { it == '�' || it.code in 0x80..0xFF || (it.code in 0x100..0x2FF) || it.code in 0x2000..0x20FF }
+
+    /**
+     * 曲の 3 つのタグを直す。文字を置き換えるだけで直るものは [fix] で。
+     * それでも化けて見えるもの（端末が読んだ時点で文字が壊れている）は、MP3 ならファイルのタグを読み直す
+     */
+    fun fixTags(path: String?, title: String?, artist: String?, album: String?): Id3Tags.Tags {
+        val t = fix(title)
+        val a = fix(artist)
+        val l = fix(album)
+        if (path == null || !(looksBroken(t) || looksBroken(a) || looksBroken(l))) return Id3Tags.Tags(t, a, l)
+        val raw = Id3Tags.read(path) ?: return Id3Tags.Tags(t, a, l)
+        return Id3Tags.Tags(
+            if (looksBroken(t)) raw.title ?: t else t,
+            if (looksBroken(a)) raw.artist ?: a else a,
+            if (looksBroken(l)) raw.album ?: l else l,
+        )
+    }
+
     fun fix(text: String?): String? {
         if (text.isNullOrEmpty()) return text
         // 欧文として読んだ文字だけで、欧文でない文字（日本語など）が混ざっていないものが対象

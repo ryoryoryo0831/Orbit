@@ -231,10 +231,11 @@ object MediaFiles {
                 while (c.moveToNext()) {
                     val path = c.getString(dataCol)
                     // タグが Shift_JIS のままの曲は、文字化けしているので読み直す
-                    val title = TagText.fix(c.getString(titleCol))?.takeIf { it.isNotBlank() }
+                    val tags = TagText.fixTags(path, c.getString(titleCol), c.getString(artistCol), c.getString(albumCol))
+                    val title = tags.title?.takeIf { it.isNotBlank() }
                         ?: path?.let { File(it).nameWithoutExtension } ?: "(名前なし)"
-                    val artist = TagText.fix(c.getString(artistCol))?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "不明なアーティスト"
-                    val album = TagText.fix(c.getString(albumCol))?.takeIf { it.isNotBlank() } ?: "不明なアルバム"
+                    val artist = tags.artist?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "不明なアーティスト"
+                    val album = tags.album?.takeIf { it.isNotBlank() } ?: "不明なアルバム"
                     val uri = ContentUris.withAppendedId(collection, c.getLong(idCol))
                     result += Song(
                         item = PlaylistItem(uri, title, path, c.getLong(durCol)),

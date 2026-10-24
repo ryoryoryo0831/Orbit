@@ -763,9 +763,13 @@ class PlaybackService : Service() {
         }
     }
 
+    /** VLC に渡した時刻（再生の記録に、開いてからの時間を残すため） */
+    private var openedAt = 0L
+
     /** 準備ができた曲・動画を VLC に渡して再生を始める */
     private fun startMedia(item: PlaylistItem, gen: Int, source: Source) {
         preparing = false
+        openedAt = android.os.SystemClock.elapsedRealtime()
         val startMs = preparingStart
         val paused = preparingPaused
         val media = try {
@@ -811,6 +815,11 @@ class PlaybackService : Service() {
         if (item.isDiscImage) {
             // Blu-ray のメニュー（多くは Java で動く）は Android では動かないので出さない
             media.addOption(":no-bluray-menu")
+            // 映像が出るまでの待ちを減らす（先読みの長さ。端末内の ISO は読みが速いので短くてよい）
+            if (!item.isNetwork) {
+                media.addOption(":dvdnav-caching=300")
+                media.addOption(":disc-caching=300")
+            }
             // 前回の続き（アプリが OS に終了させられたあとなど）は、メニューからではなく、見ていたタイトル（話）の続きから
             val resumeTitle = if (resumeDiscGen == gen && startMs > 0) resume.getTitle(item.key).takeIf { it > 0 } else null
             val startInMenu = AppSettings.dvdMenuStart(this) && resumeTitle == null
@@ -1506,11 +1515,11 @@ class PlaybackService : Service() {
             else -> "その他"
         }
         val text = when (e.type) {
-            MediaPlayer.Event.Playing -> "再生"
+            MediaPlayer.Event.Playing -> "再生（開いてから ${android.os.SystemClock.elapsedRealtime() - openedAt} ms）"
             MediaPlayer.Event.Paused -> "一時停止（${PlaybackLog.time(runCatching { player.time }.getOrDefault(0))}）"
             MediaPlayer.Event.EndReached -> "最後まで再生した"
             MediaPlayer.Event.EncounteredError -> "VLC のエラー"
-            MediaPlayer.Event.ESAdded -> "トラックが増えた：${kind(e.esChangedType)} ${e.esChangedID}"
+            MediaPlayer.Event.ESAdded -> "トラックが増えた：${kind(e.esChangedType)} ${e.esChangedID}（開いてから ${android.os.SystemClock.elapsedRealtime() - openedAt} ms）"
             MediaPlayer.Event.ESDeleted -> "トラックが消えた：${kind(e.esChangedType)} ${e.esChangedID}"
             MediaPlayer.Event.ESSelected -> "トラックが選ばれた：${kind(e.esChangedType)} ${e.esChangedID}"
             else -> return
@@ -1576,10 +1585,16 @@ class PlaybackService : Service() {
         return try {
             if (item.path != null) r.setDataSource(item.path) else r.setDataSource(this, item.uri)
             val art = if (item.isAudio) r.embeddedPicture?.let { decodeArt(it) } else null
+            val tags = TagText.fixTags(
+                item.path,
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+            )
             TrackMeta(
-                title = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))?.takeIf { item.isAudio && it.isNotBlank() },
-                artist = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))?.takeIf { it.isNotBlank() },
-                album = TagText.fix(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))?.takeIf { it.isNotBlank() },
+                title = tags.title?.takeIf { item.isAudio && it.isNotBlank() },
+                artist = tags.artist?.takeIf { it.isNotBlank() },
+                album = tags.album?.takeIf { it.isNotBlank() },
                 art = art,
             )
         } catch (_: Exception) {
