@@ -238,6 +238,12 @@ class MediaAdapter(
             onLongClick(holder.bindingAdapterPosition)
             true
         }
+        // テレビのリモコンのメニューボタン（≡）でも、長押しと同じメニューを出す
+        holder.itemView.setOnKeyListener { v, keyCode, event ->
+            if (keyCode != android.view.KeyEvent.KEYCODE_MENU) return@setOnKeyListener false
+            // 長押しのメニューが無い行（見出しなど）では何もしない（performLongClick が false を返す）
+            if (event.action == android.view.KeyEvent.ACTION_UP) v.performLongClick() else true
+        }
         val row0 = data[position]
         val more = when (holder) {
             is FolderHolder -> holder.more

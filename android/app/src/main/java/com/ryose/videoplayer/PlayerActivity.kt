@@ -259,6 +259,11 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------- ライフサイクル ----------
 
+    // テレビでは文字を大きくする（離れて見るので）
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppSettings.tvScaled(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
@@ -1152,6 +1157,10 @@ class PlayerActivity : AppCompatActivity() {
         findViewById<View>(R.id.aspectButton).onTap { cycleScale() }
         castButton.onTap { svc?.let { PlayerDialogs.showCast(this, it) } }
         findViewById<View>(R.id.rotateButton).onTap { toggleOrientation() }
+        // テレビでは使えないボタン（画面ロック・画面の向き・小窓）は出さない（リモコンで通り過ぎる回数も減る）
+        if (isTv) {
+            listOf(R.id.lockButton, R.id.rotateButton, R.id.pipButton).forEach { findViewById<View>(it).visibility = View.GONE }
+        }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {

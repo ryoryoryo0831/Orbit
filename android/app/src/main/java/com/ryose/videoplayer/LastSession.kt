@@ -17,15 +17,37 @@ object FileSaver {
     /** [text] は書き込み用のスレッドで作る（長いリストの JSON づくりで画面を止めないように） */
     fun save(file: File, text: () -> String) {
         executor.execute {
-            runCatching {
-                val tmp = File(file.path + ".tmp")
-                tmp.writeText(text())
-                if (!tmp.renameTo(file)) {
-                    file.delete()
-                    tmp.renameTo(file)
-                }
+            // 中身（JSON）づくりで失敗しても、アプリごと落ちないようにする
+            val built = try {
+                text()
+            } catch (e: Throwable) {
+                PlaybackLog.add("${file.name} の中身を作れませんでした（${e.javaClass.simpleName}）")
+                return@execute
             }
+            writeNow(file, built)
         }
+    }
+
+    /** これまでに頼んだ書き込みが終わるまで待つ（書き出しで、まだ書いていない古い中身を読まないように） */
+    fun flush() {
+        runCatching { executor.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS) }
+    }
+
+    /**
+     * 書き込み途中で壊れないよう、一時ファイルに書いてから置き換える。
+     * 書けなかった（容量不足など）ときは false を返し、再生の記録に残す（アプリでは保存できたように見えてしまうので）
+     */
+    fun writeNow(file: File, text: String): Boolean = try {
+        val tmp = File(file.path + ".tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(file)) {
+            file.delete()
+            if (!tmp.renameTo(file)) throw java.io.IOException("置き換えられませんでした")
+        }
+        true
+    } catch (e: Exception) {
+        PlaybackLog.add("${file.name} を保存できませんでした（${e.javaClass.simpleName}: ${e.message}）")
+        false
     }
 }
 

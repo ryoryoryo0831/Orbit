@@ -13,7 +13,7 @@
     <string name="need_media_permission">端末内の動画・音楽を一覧に表示するには、アクセスの許可が必要です。\n\n「すべてのファイルへのアクセス」を許可すると、動画の隣にある字幕ファイルも自動で読み込めます。</string>
     <string name="grant_permission">アクセスを許可</string>
     <string name="no_videos">動画が見つかりませんでした。</string>
-    <string name="back">戻る</string>
+    <string name="back">前の画面に戻る</string>
     <string name="rotate">画面の向き</string>
     <string name="pip">小窓で再生</string>
     <string name="lock">画面ロック</string>
@@ -31,8 +31,8 @@
     <string name="stop">再生を終了</string>
     <string name="close">閉じる</string>
     <string name="expand">全画面で再生</string>
-    <string name="rewind">戻る</string>
-    <string name="forward">進む</string>
+    <string name="rewind">少し戻す</string>
+    <string name="forward">少し進める</string>
     <string name="resize">大きさを変える</string>
     <string name="sleep_timer">スリープタイマー</string>
     <string name="equalizer">イコライザー</string>

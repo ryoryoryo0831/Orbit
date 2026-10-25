@@ -79,6 +79,21 @@ object AppSettings {
 
     /** テレビ（Fire TV・Android TV。リモコンで操作する画面がある端末） */
     fun isTv(c: Context): Boolean = tv ?: c.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK).also { tv = it }
+
+    /** テレビでの文字の大きさ（離れたソファーから読めるように、スマホ向けの大きさを何倍にするか） */
+    private const val TV_FONT_SCALE = 1.25f
+
+    /**
+     * 画面（Activity）の attachBaseContext で使う。テレビなら文字を大きくした Context を返す。
+     * 画面の部品ごとに大きさを変えるのではなく、文字の倍率（端末の設定の「文字の大きさ」と同じ仕組み）を上げる
+     */
+    fun tvScaled(base: Context): Context {
+        if (!isTv(base)) return base
+        // 文字の倍率だけを上書きする（向きや画面の大きさまで写すと、回したときに古い値のままになる）
+        val config = android.content.res.Configuration()
+        config.fontScale = base.resources.configuration.fontScale * TV_FONT_SCALE
+        return base.createConfigurationContext(config)
+    }
     /** インターレース解除の設定（-1：自動、0：オフ、1：オン） */
     fun deinterlace(c: Context) = string(c, "deinterlace", "-1")
     fun audioBoost(c: Context) = bool(c, "audio_boost", true)

@@ -52,6 +52,11 @@ class PlaylistActivity : AppCompatActivity() {
         }
     })
 
+    // テレビでは文字を大きくする（離れて見るので）
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppSettings.tvScaled(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)

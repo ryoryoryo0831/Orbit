@@ -62,7 +62,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 使っていないライブラリの部品を除いて APK を小さくする（R8）。
+            // 名前の書き換え（難読化）はしない・このアプリのコードと libVLC は全部残す（proguard-rules.pro）。
+            // 落ちたときの記録が読めなくなったり、libVLC が中から呼ぶ部品を消して動かなくなったりしないように
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
@@ -73,8 +78,8 @@ android {
     }
     lint {
         checkReleaseBuilds = false
-        // 品質チェックの結果は CI のログに出す（いまは見つかってもビルドは止めない）
-        abortOnError = false
+        // 品質チェックの結果は CI のログに出す。エラーが見つかったらビルドを止める（警告では止めない）
+        abortOnError = true
         textReport = true
         textOutput = file("build/reports/lint.txt")
         disable += setOf(

@@ -5,7 +5,6 @@ import androidx.core.content.edit
 import org.json.JSONArray
 import java.io.File
 import java.util.UUID
-import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,14 +23,20 @@ class HistoryStore(context: Context) {
         cache ?: read().also { cache = it }
     }
 
-    private fun read(): List<Entry> = try {
-        val arr = JSONArray(prefs.getString(KEY, "[]"))
-        (0 until arr.length()).map {
-            val o = arr.getJSONObject(it)
-            Entry(PlaylistItem.fromJson(o), o.optLong("playedAt"))
+    private fun read(): List<Entry> {
+        val raw = prefs.getString(KEY, "[]") ?: "[]"
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Entry(PlaylistItem.fromJson(o), o.optLong("playedAt"))
+            }
+        } catch (e: Exception) {
+            // 読めなかった中身は、次に保存したときに上書きして消してしまわないよう別の名前で残しておく
+            PlaybackLog.add("履歴を読めませんでした（${e.javaClass.simpleName}）。元の中身は残しておきます")
+            if (!prefs.contains("$KEY.broken")) prefs.edit { putString("$KEY.broken", raw) }
+            emptyList()
         }
-    } catch (_: Exception) {
-        emptyList()
     }
 
     private fun save(list: List<Entry>) {
@@ -111,8 +116,9 @@ class PlaylistStore(context: Context) {
                 )
             }
         }
-    } catch (_: Exception) {
+    } catch (e: Exception) {
         // 読めなかったファイルは、次に保存したときに上書きして消してしまわないよう別名で残しておく
+        PlaybackLog.add("プレイリストを読めませんでした（${e.javaClass.simpleName}）。元のファイルは別の名前で残します")
         runCatching { file.renameTo(File(filesDirOf(file), "playlists.broken-${System.currentTimeMillis()}.json")) }
         emptyList()
     }
@@ -126,24 +132,15 @@ class PlaylistStore(context: Context) {
         _changes.update { it + 1 }
         // ファイルの中身（JSON）を作るのも裏で行う（曲の多いプレイリストでは、お気に入りの切り替えなどで画面が止まっていた）。
         // list は書き換えない一覧なので、裏で読んでも大丈夫。書き込みは 1 本ずつ順番に行うので、古い中身で上書きすることもない
-        writer.execute {
+        // 書き込み途中で壊れないよう、一時ファイルに書いてから置き換える（FileSaver。書けなければ再生の記録に残る）
+        FileSaver.save(file) {
             val arr = JSONArray()
             list.forEach { p ->
                 val items = JSONArray()
                 p.items.forEach { items.put(it.toJson()) }
                 arr.put(org.json.JSONObject().put("id", p.id).put("name", p.name).put("items", items))
             }
-            val text = arr.toString()
-            // 書き込み途中で壊れないよう、一時ファイルに書いてから置き換える
-            // （容量不足などで書けなくても、アプリごと落ちないようにする）
-            runCatching {
-                val tmp = File(file.path + ".tmp")
-                tmp.writeText(text)
-                if (!tmp.renameTo(file)) {
-                    file.delete()
-                    tmp.renameTo(file)
-                }
-            }
+            arr.toString()
         }
     }
 
@@ -202,8 +199,6 @@ class PlaylistStore(context: Context) {
     companion object {
         private val lock = Any()
         private var cache: List<SavedPlaylist>? = null
-        /** ファイルへの書き込みは 1 本ずつ順番に */
-        private val writer = Executors.newSingleThreadExecutor()
         private val _changes = MutableStateFlow(0)
         /** プレイリスト（お気に入りも）が変わるたびに増える番号（どこで変えても。ViewModel が見張って一覧を作り直す） */
         val changes: StateFlow<Int> = _changes.asStateFlow()

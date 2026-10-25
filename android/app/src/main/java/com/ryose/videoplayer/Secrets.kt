@@ -52,7 +52,10 @@ object Secrets {
     }
 
     /** 元に戻す。暗号化されていない古い値はそのまま返す。戻せない（鍵が無い）場合は空 */
-    fun decrypt(value: String): String {
+    fun decrypt(value: String): String = decryptOrNull(value) ?: ""
+
+    /** 元に戻す。戻せない（鍵が無い・鍵保管庫が一時的に使えない）場合は null（呼ぶ側で暗号を消さずに残せるように） */
+    fun decryptOrNull(value: String): String? {
         if (!isEncrypted(value)) return value
         return try {
             val data = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
@@ -60,7 +63,7 @@ object Secrets {
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, data, 0, 12))
             String(cipher.doFinal(data, 12, data.size - 12), Charsets.UTF_8)
         } catch (_: Exception) {
-            ""
+            null
         }
     }
 }

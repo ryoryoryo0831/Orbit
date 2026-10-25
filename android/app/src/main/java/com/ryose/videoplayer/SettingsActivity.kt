@@ -25,6 +25,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 /** 設定画面 */
 class SettingsActivity : AppCompatActivity() {
 
+    // テレビでは文字を大きくする（離れて見るので）
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppSettings.tvScaled(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)
@@ -66,6 +71,13 @@ class SettingsActivity : AppCompatActivity() {
             val ctx = requireContext()
             findPreference<androidx.preference.Preference>("version")?.summary =
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            // テレビでは使えない設定（画面の向き・小窓・指での操作）は出さない
+            if (AppSettings.isTv(ctx)) {
+                listOf(
+                    "player_orientation", "leave_action", "gesture_brightness", "gesture_volume",
+                    "gesture_seek", "gesture_double_tap", "gesture_long_press",
+                ).forEach { findPreference<androidx.preference.Preference>(it)?.isVisible = false }
+            }
             // テーマはすぐに切り替える
             findPreference<androidx.preference.ListPreference>("theme")?.setOnPreferenceChangeListener { _, v ->
                 AppSettings.applyTheme(ctx, v as String)

@@ -144,7 +144,10 @@ object AppUpdater {
         val arr = release.optJSONArray("assets") ?: return emptyList()
         return (0 until arr.length()).map { i ->
             val a = arr.getJSONObject(i)
-            UpdateRules.Asset(a.optString("name"), a.optString("browser_download_url"), a.optLong("size"))
+            UpdateRules.Asset(
+                a.optString("name"), a.optString("browser_download_url"), a.optLong("size"),
+                UpdateRules.sha256Of(a.optString("digest")),
+            )
         }
     }
 
@@ -250,6 +253,8 @@ object AppUpdater {
             val total = conn.contentLengthLong.takeIf { it > 0 } ?: update.apkSize
             var done = 0L
             var lastPercent = -1
+            // 中身が公開したものと同じか確かめるため、読みながら SHA-256 を計算する
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
             conn.inputStream.use { input ->
                 tmp.outputStream().use { out ->
                     val buf = ByteArray(64 * 1024)
@@ -258,6 +263,7 @@ object AppUpdater {
                         val n = input.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
+                        sha.update(buf, 0, n)
                         done += n
                         val percent = if (total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else 0
                         if (percent != lastPercent) {
@@ -268,6 +274,10 @@ object AppUpdater {
                 }
             }
             if (update.apkSize > 0 && tmp.length() != update.apkSize) throw IllegalStateException("ダウンロードが途中で切れました")
+            if (update.apkSha256.isNotEmpty()) {
+                val got = sha.digest().joinToString("") { "%02x".format(it) }
+                if (got != update.apkSha256) throw IllegalStateException("ダウンロードしたファイルが公開したものと違います（壊れている可能性があります）")
+            }
             if (!tmp.renameTo(file)) throw IllegalStateException("保存できませんでした")
         } finally {
             conn.disconnect()

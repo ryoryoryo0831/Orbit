@@ -100,6 +100,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // テレビでは文字を大きくする（離れて見るので）
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppSettings.tvScaled(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // 起動中の画面（スプラッシュ画面）。テーマを元に戻すので super.onCreate より前に呼ぶ
         installSplashScreen()

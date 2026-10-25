@@ -46,11 +46,13 @@ jobs:
       - name: テスト
         run: gradle testReleaseUnitTest --no-daemon
 
+      # エラーが見つかったら止める（警告だけなら続ける）。どちらでも結果はログに出す
       - name: 品質チェック（Android Lint）
-        continue-on-error: true
         run: |
-          gradle lintRelease --no-daemon
-          cat app/build/reports/lint.txt
+          status=0
+          gradle lintRelease --no-daemon || status=$?
+          cat app/build/reports/lint.txt || true
+          exit $status
 
       - name: APK をビルド
         env:

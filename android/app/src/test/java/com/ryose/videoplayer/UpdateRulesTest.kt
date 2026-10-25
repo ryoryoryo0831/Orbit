@@ -76,4 +76,16 @@ class UpdateRulesTest {
         // 端末の時計が戻ったときも確かめる
         assertTrue(UpdateRules.shouldCheck(lastCheckedAt = 5_000, now = 1_000))
     }
+
+    @Test
+    fun ダウンロードを確かめるSHA256() {
+        val hex = "731a952335756c81df61fd9731f1c8c1b675397f9c06e6764520de19bb3bebe3"
+        assertEquals(hex, UpdateRules.sha256Of("sha256:${hex.uppercase()}"))
+        // 無い・ほかの方式・長さが違うときは確かめない（空）
+        assertEquals("", UpdateRules.sha256Of(""))
+        assertEquals("", UpdateRules.sha256Of("sha1:abc"))
+        assertEquals("", UpdateRules.sha256Of("sha256:abc"))
+        val withSha = listOf(Asset("Orbit-1.0.129.apk", "https://example/64", 30_000_000, hex))
+        assertEquals(hex, UpdateRules.pick("build-129", withSha, is64Bit = true)!!.apkSha256)
+    }
 }

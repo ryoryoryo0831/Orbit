@@ -76,6 +76,11 @@ class AudioPlayerActivity : AppCompatActivity() {
 
     private val connection = PlaybackConnection(this, autoCreate = true, onConnected = ::onServiceReady, onDisconnected = { svc = null })
 
+    // テレビでは文字を大きくする（離れて見るので）
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppSettings.tvScaled(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)

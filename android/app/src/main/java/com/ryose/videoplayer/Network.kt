@@ -90,17 +90,42 @@ class ServerStore(context: Context) {
      */
     fun all(): List<Server> = cache ?: synchronized(lock) {
         // 裏での先読み（preload）と同時に呼ばれても、読み込みは 1 回だけにする
-        cache ?: try {
-            val arr = JSONArray(prefs.getString("list", "[]"))
-            val stored = (0 until arr.length()).map { Server.fromJson(arr.getJSONObject(it)) }
-            val list = stored.map { it.copy(password = Secrets.decrypt(it.password)) }
-            // 以前のバージョンで暗号化せずに保存したパスワードがあれば、暗号化して保存し直す
-            if (stored.any { it.password.isNotEmpty() && !Secrets.isEncrypted(it.password) }) save(list)
-            cache = list
-            list
-        } catch (_: Exception) {
-            emptyList()
+        cache ?: load()
+    }
+
+    private fun load(): List<Server> {
+        val raw = prefs.getString("list", "[]") ?: "[]"
+        val stored = try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { Server.fromJson(arr.getJSONObject(it)) }
+        } catch (e: Exception) {
+            // 壊れた中身は消さずに別の名前で残す（このあと追加・削除して保存したときに、上書きで失わないように）
+            PlaybackLog.add("NAS などの登録を読めませんでした（${e.javaClass.simpleName}）。元の中身は list_broken に残します")
+            if (!prefs.contains("list_broken")) prefs.edit { putString("list_broken", raw) }
+            return emptyList<Server>().also { cache = it }
         }
+        var failed = false
+        val list = stored.map { s ->
+            val plain = Secrets.decryptOrNull(s.password)
+            if (plain == null) {
+                // 戻せなかった（鍵保管庫が一時的に使えないなど）。暗号のまま覚えておき、保存するときはそれを書き戻す
+                failed = true
+                undecrypted[s.id] = s.password
+                s.copy(password = "")
+            } else {
+                undecrypted.remove(s.id)
+                s.copy(password = plain)
+            }
+        }
+        if (failed) {
+            PlaybackLog.add("NAS などのパスワードを元に戻せませんでした。保存してある暗号は消さずに残し、次に使うときにもう一度試します")
+            // 覚えずに返す（次に読むときにもう一度戻してみる）
+            return list
+        }
+        // 以前のバージョンで暗号化せずに保存したパスワードがあれば、暗号化して保存し直す
+        if (stored.any { it.password.isNotEmpty() && !Secrets.isEncrypted(it.password) }) save(list)
+        cache = list
+        return list
     }
 
     /** アプリの起動時に裏のスレッドで呼び、パスワードを戻しておく（画面のスレッドで重い処理をしないように） */
@@ -111,14 +136,27 @@ class ServerStore(context: Context) {
     private companion object {
         @Volatile var cache: List<Server>? = null
         val lock = Any()
+
+        /** 元に戻せなかったパスワード（id → 保存してある暗号）。保存し直すときに空で上書きしないように */
+        val undecrypted = java.util.concurrent.ConcurrentHashMap<String, String>()
     }
 
     private fun save(list: List<Server>) = synchronized(lock) {
-        cache = list
+        // 戻せなかったパスワードがあるときは覚えない（次に読むときに、もう一度戻してみる）
+        cache = list.takeIf { undecrypted.isEmpty() }
         val arr = JSONArray()
         list.forEach { s ->
-            // 暗号化できない（鍵保管庫が使えない）場合は、パスワードを保存しない
-            val enc = runCatching { Secrets.encrypt(s.password) }.getOrDefault("")
+            val kept = undecrypted[s.id]
+            val enc = if (s.password.isEmpty() && kept != null) {
+                // 戻せなかったパスワードは、空にせず元の暗号のまま残す
+                kept
+            } else {
+                undecrypted.remove(s.id)
+                // 暗号化できない（鍵保管庫が使えない）場合は、パスワードを保存しない
+                runCatching { Secrets.encrypt(s.password) }
+                    .onFailure { PlaybackLog.add("「${s.name}」のパスワードを暗号化できず、保存できませんでした（${it.javaClass.simpleName}）") }
+                    .getOrDefault("")
+            }
             arr.put(s.copy(password = enc).toJson())
         }
         prefs.edit { putString("list", arr.toString()) }
@@ -131,7 +169,10 @@ class ServerStore(context: Context) {
         save(if (list.any { it.id == server.id }) list.map { if (it.id == server.id) server else it } else list + server)
     }
 
-    fun remove(id: String) = synchronized(lock) { save(all().filterNot { it.id == id }) }
+    fun remove(id: String) = synchronized(lock) {
+        save(all().filterNot { it.id == id })
+        undecrypted.remove(id)
+    }
 
     /** その Uri と同じサーバー（種類・ホスト・ポートが一致）でログイン情報があるもの */
     fun find(uri: Uri): Server? {

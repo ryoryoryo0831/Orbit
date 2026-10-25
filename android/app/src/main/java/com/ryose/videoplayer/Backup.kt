@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -68,6 +67,8 @@ object Backup {
             }
             prefs.put(name, o)
         }
+        // まだ書いていないプレイリストの変更があれば、書き終わるのを待ってから読む
+        FileSaver.flush()
         val files = JSONObject()
         for (name in FILES) {
             val f = File(context.filesDir, name)
@@ -93,26 +94,41 @@ object Backup {
             return Result(false, "Orbit の書き出したファイルではないようです")
         }
         val prefs = root.optJSONObject("prefs") ?: JSONObject()
-        // 同じ端末なら、今のパスワード（この端末の鍵で暗号化したもの）を残す
-        val oldServers = runCatching { JSONArray(prefsOf(context, "servers").getString("list", "[]")) }.getOrNull()
-        for (name in PREFS) {
-            val o = prefs.optJSONObject(name) ?: continue
-            prefsOf(context, name).edit(commit = true) {
-                // 設定の中のこの端末だけの値は残し、ほかは置き換える
-                for (key in prefsOf(context, name).all.keys) if (key !in SKIP_KEYS) remove(key)
-                for (key in o.keys()) {
-                    val entry = o.optJSONObject(key)
-                    if (key !in SKIP_KEYS && entry != null) put(this, name, key, entry, oldServers)
-                }
+        val files = root.optJSONObject("files") ?: JSONObject()
+        // 何かを書き換える前に、ファイルの中身が読めるかを確かめる（途中で失敗して、古いデータと新しいデータが混ざらないように）
+        for (name in FILES) {
+            if (files.has(name) && runCatching { JSONArray(files.getString(name)) }.isFailure) {
+                return Result(false, "書き出したファイルが壊れているようです（$name）。今のデータはそのままです")
             }
         }
-        val files = root.optJSONObject("files") ?: JSONObject()
+        // 先に今のプレイリストの書き込みが終わるのを待つ（読み込んだ中身を、古い書き込みで上書きしないように）
+        FileSaver.flush()
+        // 同じ端末なら、今のパスワード（この端末の鍵で暗号化したもの）を残す
+        val oldServers = runCatching { JSONArray(prefsOf(context, "servers").getString("list", "[]")) }.getOrNull()
+        var failed = false
+        for (name in PREFS) {
+            val o = prefs.optJSONObject(name) ?: continue
+            val editor = prefsOf(context, name).edit()
+            // 設定の中のこの端末だけの値は残し、ほかは置き換える
+            for (key in prefsOf(context, name).all.keys) if (key !in SKIP_KEYS) editor.remove(key)
+            for (key in o.keys()) {
+                val entry = o.optJSONObject(key)
+                if (key !in SKIP_KEYS && entry != null) put(editor, name, key, entry, oldServers)
+            }
+            if (!editor.commit()) {
+                failed = true
+                PlaybackLog.add("読み込み：$name を保存できませんでした")
+            }
+        }
         for (name in FILES) {
             if (!files.has(name)) continue
-            File(context.filesDir, name).writeText(files.getString(name))
+            if (!FileSaver.writeNow(File(context.filesDir, name), files.getString(name))) failed = true
         }
         val from = root.optString("version")
-        return Result(true, "読み込みました（Orbit $from で書き出したもの）。アプリを起動し直します。")
+        if (failed) {
+            return Result(true, "読み込みましたが、一部を保存できませんでした（端末の空き容量を確かめてください）。アプリを起動し直します。")
+        }
+        return Result(true,"読み込みました（Orbit $from で書き出したもの）。アプリを起動し直します。")
     }
 
     /** 書き出した 1 つの値を戻す */

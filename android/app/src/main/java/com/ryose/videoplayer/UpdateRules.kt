@@ -8,8 +8,8 @@ package com.ryose.videoplayer
  * ふつうの端末は latest だけ、設定「お試し版も受け取る」の端末はお試し版も知らせる
  */
 object UpdateRules {
-    /** Releases の添付ファイル */
-    data class Asset(val name: String, val url: String, val size: Long)
+    /** Releases の添付ファイル。[sha256] は GitHub が返す中身の確かめ用の値（16 進。古い公開版などで無ければ空） */
+    data class Asset(val name: String, val url: String, val size: Long, val sha256: String = "")
 
     /** Releases の 1 つ（お試し版も調べるときは一覧で受け取る） */
     data class Release(val tag: String, val prerelease: Boolean, val draft: Boolean, val assets: List<Asset>)
@@ -22,7 +22,12 @@ object UpdateRules {
         val apkUrl: String,
         val apkSize: Long,
         val prerelease: Boolean = false,
+        val apkSha256: String = "",
     )
+
+    /** GitHub の「digest」（"sha256:ab12…"）から 16 進の値を取り出す。SHA-256 でなければ空 */
+    fun sha256Of(digest: String): String =
+        if (digest.startsWith("sha256:")) digest.removePrefix("sha256:").lowercase().takeIf { it.length == 64 }.orEmpty() else ""
 
     /** タグ「build-129」から版の番号（129）。Android 版のタグでなければ null（iPhone 版は「ios-build-N」） */
     fun versionCodeOf(tag: String): Int? = if (tag.startsWith("build-")) tag.removePrefix("build-").toIntOrNull() else null
@@ -36,7 +41,7 @@ object UpdateRules {
         val name = "1.0.$code"
         val want = if (is64Bit) "Orbit-$name.apk" else "Orbit-$name-32bit.apk"
         val asset = assets.find { it.name == want } ?: return null
-        return Update(code, name, asset.name, asset.url, asset.size)
+        return Update(code, name, asset.name, asset.url, asset.size, apkSha256 = asset.sha256)
     }
 
     /**
