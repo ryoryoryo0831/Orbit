@@ -161,6 +161,9 @@ class PlaybackService : Service() {
         private set
     var rate = 1f
         private set
+    /** 曲の速度（動画は動画ごとに覚えるので、曲は曲で直前の速度を続ける） */
+    private var musicRate = 1f
+    private val perVideo = PerVideoStore(this)
     var meta: TrackMeta? = null
         private set
     /** スリープタイマーで止める時刻（0 なら未設定） */
@@ -726,6 +729,8 @@ class PlaybackService : Service() {
         lastError = null
         // A-B リピートは解除する。前に A-B リピートをしていたファイルなら、その区間を戻す（区間の外から始まるときは A から）
         preparingStart = abRepeat.onItemOpened(item.key, preparingStart)
+        // 動画は、その動画で変えた速度に戻す（覚えていなければ 1 倍）。曲は直前の曲の速度のまま
+        rate = if (item.isAudio) musicRate else perVideo.speed(item.key) ?: 1f
 
         // 履歴は動画だけ（音楽を聴くと動画の履歴が押し出されてしまうので）
         if (!item.isAudio) scope.launch(Dispatchers.IO) { history.add(item) }
@@ -929,9 +934,11 @@ class PlaybackService : Service() {
 
     fun seekBy(deltaMs: Long) = seekTo(reloadPosition() + deltaMs)
 
-    fun setPlaybackRate(r: Float) {
+    /** 再生速度を変える。[remember] が false（長押しの 2 倍速）のときは、動画ごとの速度として覚えない */
+    fun setPlaybackRate(r: Float, remember: Boolean = true) {
         rate = r
         player.rate = r
+        if (remember) currentItem?.let { item -> if (item.isAudio) musicRate = r else perVideo.setSpeed(item.key, r) }
         updateSession()
         publishNowPlaying()
     }

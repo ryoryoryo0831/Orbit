@@ -85,7 +85,25 @@ object ThumbCache {
     private const val MAX_FILES = 4000
     private const val SIZE = 384
 
-    private fun dir(context: Context) = File(context.cacheDir, "thumbs").apply { mkdirs() }
+    /** サムネイルの作り方の版（変えたら、前の作り方のものは最初に使うときに一度だけ全部消す） */
+    private const val VERSION = 2
+    @Volatile private var checked = false
+
+    private fun dir(context: Context): File {
+        val dir = File(context.cacheDir, "thumbs").apply { mkdirs() }
+        if (!checked) synchronized(this) {
+            if (!checked) {
+                // 2：サムネイルの場面を、冒頭から長さの 1 割あたりに変えた
+                val mark = File(dir, ".v$VERSION")
+                if (!mark.exists()) {
+                    dir.listFiles()?.forEach { it.delete() }
+                    runCatching { mark.createNewFile() }
+                }
+                checked = true
+            }
+        }
+        return dir
+    }
 
     fun fileFor(context: Context, key: String, modified: Long): File =
         File(dir(context), "${key.hashCode().toUInt().toString(16)}_${modified.toString(16)}.jpg")
@@ -135,7 +153,7 @@ object ThumbCache {
 
     /** 増えすぎたら、しばらく使っていないものから消す */
     fun trim(context: Context) {
-        val files = dir(context).listFiles() ?: return
+        val files = dir(context).listFiles()?.filter { it.name.endsWith(".jpg") } ?: return
         if (files.size <= MAX_FILES) return
         files.sortedBy { it.lastModified() }.take(files.size - MAX_FILES * 3 / 4).forEach { it.delete() }
     }
@@ -157,7 +175,8 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         // ネットワークの動画は Android のサムネイル作りでは開けないので、最初から VLC で（結果は端末に覚えておく）
         val isNetwork = data.path == null && data.uri.scheme?.lowercase() in setOf("smb", "ftp", "ftps", "ftpes", "sftp", "http", "https", "nfs", "upnp")
         val file = (if (isNetwork) null else ThumbCache.getOrCreate(context, key, modified, rememberFailure = false) {
-            systemThumbnail(context) ?: frameFromVideo(context)
+            // Android が作っておいたサムネイルは冒頭の場面なので、取り出せないときだけ使う
+            frameFromVideo(context) ?: systemThumbnail(context)
         }) ?: withContext(VLC_DISPATCHER) {
             // Android が読めない形式（WMV・FLV・一部の AVI など）は、VLC で 1 コマを取り出す。
             // 時間がかかるので、ほかのサムネイル作りの枠とは別に 1 本ずつ。スクロールして要らなくなったものは始めない
@@ -195,15 +214,17 @@ private class VideoThumbFetcher(private val data: VideoThumb, private val option
         )?.use { c -> if (c.moveToFirst()) android.content.ContentUris.withAppendedId(collection, c.getLong(0)) else null }
     }.getOrNull()
 
-    /** 動画の 1 秒あたりの場面を取り出す */
+    /** 動画の長さの 1 割あたりの場面を取り出す（[ThumbRules]） */
     private fun frameFromVideo(context: Context): Bitmap? {
         val r = MediaMetadataRetriever()
         return try {
             if (data.path != null && File(data.path).canRead()) r.setDataSource(data.path) else r.setDataSource(context, data.uri)
+            val duration = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val us = ThumbRules.positionMs(duration) * 1000
             val frame = if (Build.VERSION.SDK_INT >= 27) {
-                r.getScaledFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 512, 512)
+                r.getScaledFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 512, 512)
             } else {
-                r.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                r.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
             frame ?: r.frameAtTime
         } catch (_: Exception) {

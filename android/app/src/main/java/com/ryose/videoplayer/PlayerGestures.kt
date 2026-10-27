@@ -88,7 +88,7 @@ class PlayerGestures(
     private fun startLongPressSpeed() {
         val s = host.service ?: return
         longPressRate = s.rate
-        s.setPlaybackRate(2f)
+        s.setPlaybackRate(2f, remember = false)
         touchLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         host.showInfo("2倍速で再生中", autoHide = false)
     }
@@ -97,7 +97,7 @@ class PlayerGestures(
     fun endLongPressSpeed() {
         val r = longPressRate ?: return
         longPressRate = null
-        host.service?.setPlaybackRate(r)
+        host.service?.setPlaybackRate(r, remember = false)
         host.hideInfoLater(0)
     }
 

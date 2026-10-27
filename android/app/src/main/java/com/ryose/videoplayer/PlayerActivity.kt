@@ -541,6 +541,8 @@ class PlayerActivity : AppCompatActivity() {
         if (pipReceiverRegistered) runCatching { unregisterReceiver(pipReceiver) }
         thumbs.release()
         disconnect()
+        // 明るさを変えてすぐ閉じたときも覚える（まだなら。覚え済みなら同じ値を書くだけ）
+        saveBrightness.run()
         handler.removeCallbacksAndMessages(null)
     }
 
@@ -658,6 +660,8 @@ class PlayerActivity : AppCompatActivity() {
         val key = s.currentItem?.key
         if (key != shownItemKey) {
             shownItemKey = key
+            // その動画で変えた明るさに戻す（覚えていなければ端末の明るさ）
+            if (key != null) applyBrightness(perVideo.brightness(key) ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
             lengthMs = 0
             seekBar.progress = 0
             timeDuration.text = formatTime(0)
@@ -1598,11 +1602,24 @@ class PlayerActivity : AppCompatActivity() {
         }
         override fun currentBrightness(): Float = this@PlayerActivity.currentBrightness()
         override fun setBrightness(value: Float) {
-            window.attributes = window.attributes.apply { screenBrightness = value }
+            applyBrightness(value)
+            // 指を動かしている間は何度も呼ばれるので、止まってから覚える
+            val key = shownItemKey ?: return
+            handler.removeCallbacks(saveBrightness)
+            saveBrightness = Runnable { perVideo.setBrightness(key, value) }
+            handler.postDelayed(saveBrightness, 500)
         }
         override fun currentVolumePercent(): Int = this@PlayerActivity.currentVolumePercent()
         override fun applyVolumePercent(percent: Int) = this@PlayerActivity.applyVolumePercent(percent)
         override fun volumeText(percent: Int): String = this@PlayerActivity.volumeText(percent)
+    }
+
+    private val perVideo by lazy { PerVideoStore(this) }
+    private var saveBrightness = Runnable {}
+
+    private fun applyBrightness(value: Float) {
+        if (window.attributes.screenBrightness == value) return
+        window.attributes = window.attributes.apply { screenBrightness = value }
     }
 
     // 端末の明るさの最大値は Android の内部の値なので、R.integer では指せず名前で探すしかない

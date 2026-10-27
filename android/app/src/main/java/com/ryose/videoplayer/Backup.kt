@@ -31,7 +31,7 @@ object Backup {
     /** 書き出す SharedPreferences（DEFAULT_PREFS は設定画面の設定） */
     private val PREFS = listOf(
         DEFAULT_PREFS, "favorites", "history", "servers", "urls", "player",
-        "resume", "resume_title", "ab_repeat", "track_choice", "equalizer",
+        "resume", "resume_title", "ab_repeat", "track_choice", "per_video", "equalizer",
     )
 
     /** 書き出すファイル（files の中） */

@@ -63,6 +63,12 @@ object VlcThumbnailer {
         /** VLC が知らせてくる映像の大きさ（画素の比も入れた幅・高さ） */
         @Volatile private var videoW = 0
         @Volatile private var videoH = 0
+        /** サムネイルにする場面の位置（長さが分かるまでは -1） */
+        @Volatile private var target = -1L
+        /** 届いたコマを使ってよいか（目当ての場面まで移り終えた） */
+        @Volatile private var ready = false
+        /** 目当ての場面を待っている間に届いたコマの数（長さの分からない動画で、待ち続けないように） */
+        private var waited = 0
 
         // OpenGL（gl のスレッドだけで使う）
         private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -100,7 +106,25 @@ object VlcThumbnailer {
                 if (!attached) return null
                 mp.setEventListener(object : MediaPlayer.EventListener {
                     override fun onEvent(event: MediaPlayer.Event) {
-                        if (event.type == MediaPlayer.Event.EncounteredError || event.type == MediaPlayer.Event.EndReached) finish(null)
+                        when (event.type) {
+                            MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> finish(null)
+                            // 長さが分かったら、長さの 1 割あたりへ移る（短い動画はそのまま 1 秒あたり）
+                            MediaPlayer.Event.LengthChanged -> {
+                                if (target < 0 && event.lengthChanged > 0) {
+                                    val t = ThumbRules.positionMs(event.lengthChanged)
+                                    target = t
+                                    if (t > SEEK_MIN_MS) {
+                                        mp.setTime(t)
+                                    } else {
+                                        ready = true
+                                    }
+                                }
+                            }
+                            // 移った先の場面が出始めたら、コマを使い始める
+                            MediaPlayer.Event.TimeChanged -> {
+                                if (target > 0 && event.timeChanged >= target - 1_000) ready = true
+                            }
+                        }
                     }
                 })
                 val media = openMedia(lib) ?: return null
@@ -108,7 +132,7 @@ object VlcThumbnailer {
                 media.setHWDecoderEnabled(false, false)
                 media.addOption(":no-audio")
                 media.addOption(":no-spu")
-                // Android のサムネイルと同じく、1 秒あたりの場面
+                // 1 秒あたりから始め、長さが分かったら長さの 1 割あたりへ移る（LengthChanged）
                 media.addOption(":start-time=1")
                 mp.media = media
                 media.release()
@@ -216,6 +240,12 @@ object VlcThumbnailer {
             val st = surfaceTexture ?: return
             runCatching { st.updateTexImage() }.onFailure { return }
             if (finished) return
+            // 長さの 1 割あたりへ移る前のコマは使わない。長さが分からないまま（生放送など）なら、しばらくで使い始める
+            if (!ready) {
+                waited++
+                if (target >= 0 || waited < MAX_FRAMES) return
+                ready = true
+            }
             frames++
             // 大きさがまだ分からなければ、次のコマを待つ（来なければ 16:9 で）
             if ((videoW <= 0 || videoH <= 0) && frames < 5) return
@@ -327,6 +357,8 @@ object VlcThumbnailer {
     private val NETWORK_SCHEMES = setOf("smb", "ftp", "ftps", "ftpes", "sftp", "http", "https", "nfs", "upnp")
     /** 暗いコマを飛ばすのは、ここまで（約 2 秒分） */
     private const val MAX_FRAMES = 60
+    /** これより手前の場面なら、移らずに 1 秒あたりのまま使う */
+    private const val SEEK_MIN_MS = 2_000L
 
     private const val VERTEX_SHADER = """
         attribute vec4 aPos;
