@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ビデオプレイヤー</title>
+<title>Orbit（ブラウザ版）</title>
 <style>
   :root {
     --bg: #0f1115;
@@ -144,7 +144,7 @@
 <body>
 
 <header>
-  <h1>🎬 ビデオプレイヤー</h1>
+  <h1>🎬 Orbit</h1>
   <label class="btn btn-primary">
     ファイルを開く
     <input type="file" id="fileInput" accept="video/*,audio/*,.mkv" multiple hidden>
@@ -306,7 +306,7 @@
     video.playbackRate = parseFloat(speed.value);
     dropzone.hidden = true;
     $('nowTitle').textContent = item.name;
-    document.title = item.name + ' - ビデオプレイヤー';
+    document.title = item.name + ' - Orbit';
     renderPlaylist();
     video.addEventListener('loadedmetadata', () => {
       // 前回の続きから再生
