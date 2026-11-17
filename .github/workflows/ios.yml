@@ -57,6 +57,8 @@ jobs:
         with:
           name: Orbit-iOS-ipa
           path: Orbit-iOS-*.ipa
+          # 古い成果物が溜まらないよう 7 日で消す（main の版は Release にも残る）
+          retention-days: 7
 
       # 公開は main だけ。Android 版の「最新版」ページが変わらないよう、最新版にはしない
       - name: リリースとして公開

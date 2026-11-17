@@ -70,6 +70,8 @@ jobs:
         with:
           name: Orbit-apk
           path: Orbit-*.apk
+          # 古い成果物が溜まらないよう 7 日で消す（main の版は Release にも残る）
+          retention-days: 7
 
       # 公開は main だけ。作業用ブランチではビルドの確認だけ行う。
       # まず「お試し版」（プレリリース）として出し、latest は変えない（アプリの「新しい版を知らせる」は latest を見るので、
