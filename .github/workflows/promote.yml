@@ -28,7 +28,7 @@ jobs:
       - name: お試し版を latest にする
         run: |
           set -euo pipefail
-          # Android 版のタグ（build-N）だけ。iPhone 版（ios-build-N）は対象外
+          # Android 版のタグ（build-N）だけを対象にする
           list=$(gh release list --limit 1000 --json tagName,isPrerelease,isDraft,isLatest)
           VERSION=$(echo "$VERSION" | tr -d "[:space:]")
           if [ -n "$VERSION" ]; then

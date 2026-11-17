@@ -5,8 +5,7 @@ VLC for Android の代わりに、家族で使うための動画・音楽プレ�
 | フォルダ | 中身 |
 |---|---|
 | `android/` | Android 版（Kotlin ＋ libVLC：VLC と同じ再生エンジン）。スマホ・タブレット・Android TV / Fire TV |
-| `ios/` | iPhone 版（SwiftUI ＋ MobileVLCKit）。開発は保留中 |
-| `docs/` | 引き継ぎメモ（`引き継ぎ.md`）、これまでの記録、iPhone 版のインストール手順 |
+| `docs/` | 引き継ぎメモ（`引き継ぎ.md`）、これまでの記録 |
 | `.github/workflows/` | ビルドと公開（GitHub Actions） |
 | `index.html` | 最初に作ったブラウザ版の試作（ダブルクリックで開くだけで使えます。今は手を入れていません） |
 
