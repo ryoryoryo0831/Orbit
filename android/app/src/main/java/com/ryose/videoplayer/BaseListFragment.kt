@@ -53,6 +53,8 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
         adapter = MediaAdapter(resume, ::onRowClick, ::onRowLongClick) { row -> row is Row.Media || hasExtraActions(row) }
         setColumns(listColumns())
         list.adapter = adapter
+        // 長い一覧（曲・ISO など）を一気に動かすつまみ。動かしている間は頭文字を出す
+        FastScrollBar.attach(list) { pos -> FastScrollBar.initialOf(rowName(adapter.rows.getOrNull(pos))) }
         grantButton.setOnClickListener {
             // 「再試行」などに使っているときはその処理、そうでなければ「アクセスを許可」
             val action = emptyAction

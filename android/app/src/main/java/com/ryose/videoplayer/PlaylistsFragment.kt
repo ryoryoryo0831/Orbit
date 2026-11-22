@@ -45,6 +45,11 @@ class PlaylistsFragment : BaseListFragment() {
         )
     }
 
+    // 動画・音楽タブと同じように、見出しの下に件数を出す（お気に入りは数えない）
+    override fun subtitle(): String? =
+        adapter.rows.count { it is Row.Folder && it.id != FavoriteMedia.PLAYLIST_ID }
+            .takeIf { it > 0 }?.let { "$it 個のプレイリスト" }
+
     override fun onRowClick(position: Int) {
         val id = (adapter.rows.getOrNull(position) as? Row.Folder)?.id ?: return
         startActivity(Intent(requireContext(), PlaylistActivity::class.java).putExtra(PlaylistActivity.EXTRA_ID, id))

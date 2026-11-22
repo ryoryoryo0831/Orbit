@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 広い画面（タブレット・横向き・テレビ）：設定の中身を 640dp の幅にして中央に寄せる。
+     横いっぱいだと、項目の文字と右端のスイッチが離れすぎて、どの行のスイッチか分かりにくいため。
+     中身は layout/activity_settings.xml と同じ（id をそろえる） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/surface" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <FrameLayout
+            android:id="@+id/settingsContainer"
+            android:layout_width="640dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="center_horizontal" />
+    </FrameLayout>
+</LinearLayout>

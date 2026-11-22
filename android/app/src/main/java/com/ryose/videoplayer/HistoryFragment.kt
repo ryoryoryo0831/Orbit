@@ -59,6 +59,10 @@ class HistoryFragment : BaseListFragment() {
         vm.refresh()
     }
 
+    // 動画・音楽タブと同じように、見出しの下に件数を出す
+    override fun subtitle(): String? =
+        adapter.rows.count { it is Row.Media }.takeIf { it > 0 }?.let { "再生した動画 $it 本" }
+
     // 履歴の一覧は HistoryStore が変わると作り直されるので、名前の変更・削除のあとに何もしなくてよい
     override fun onFilesChanged() {}
 

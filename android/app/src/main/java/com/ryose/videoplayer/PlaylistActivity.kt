@@ -139,8 +139,38 @@ class PlaylistActivity : AppCompatActivity() {
                     showUndo(if (isFavorites) "お気に入りから外しました" else "プレイリストから外しました") { vm.setItems(before) }
                 },
                 SheetItem(R.drawable.ic_playlist_add, "ほかのプレイリストに追加") { PlaylistDialogs.addToPlaylist(this, listOf(item)) },
-            ),
+            ) + moveItems(position),
         )
+    }
+
+    /**
+     * 「1 つ上へ・1 つ下へ・先頭へ・最後へ」。並べ替えのつまみは指でしか動かせないので、
+     * テレビ（十字キー）や読み上げ（TalkBack）でも順番を変えられるように、メニューからも動かせるようにする
+     */
+    private fun moveItems(position: Int): List<SheetItem> {
+        val last = currentItems().lastIndex
+        if (last < 1) return emptyList()
+        return buildList {
+            if (position > 0) {
+                add(SheetItem(R.drawable.ic_expand_less, "1 つ上へ") { moveRow(position, position - 1) })
+                if (position > 1) add(SheetItem(R.drawable.ic_expand_less, "先頭へ") { moveRow(position, 0) })
+            }
+            if (position < last) {
+                add(SheetItem(R.drawable.ic_expand_more, "1 つ下へ") { moveRow(position, position + 1) })
+                if (position < last - 1) add(SheetItem(R.drawable.ic_expand_more, "最後へ") { moveRow(position, last) })
+            }
+        }
+    }
+
+    private fun moveRow(from: Int, to: Int) {
+        val items = currentItems().toMutableList()
+        if (from !in items.indices || to !in items.indices) return
+        items.add(to, items.removeAt(from))
+        adapter.move(from, to)
+        vm.setItems(items)
+        // 動かした行を見えるところに出して、テレビでは選んだままにする（続けて動かせるように）
+        listView.scrollToPosition(to)
+        listView.post { listView.findViewHolderForAdapterPosition(to)?.itemView?.requestFocus() }
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {

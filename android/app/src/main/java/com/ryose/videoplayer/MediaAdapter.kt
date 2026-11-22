@@ -39,6 +39,14 @@ sealed class Row {
     data class Header(val title: String) : Row()
 }
 
+/** 行に表示している名前（早送りスクロールの頭文字に使う） */
+fun rowName(row: Row?): String? = when (row) {
+    is Row.Folder -> row.name
+    is Row.Media -> row.item.title
+    is Row.Header -> row.title
+    null -> null
+}
+
 class MediaAdapter(
     private val resume: ResumeStore,
     private val onClick: (position: Int) -> Unit,

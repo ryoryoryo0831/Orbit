@@ -183,7 +183,8 @@ class ActionSheet private constructor(
                 addView(detail)
             }
             addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(more, LinearLayout.LayoutParams(px(44), px(48)))
+            // 押しやすい大きさ（48dp 四方）
+            addView(more, LinearLayout.LayoutParams(px(48), px(48)))
         }
 
         fun bind(item: SheetItem) {

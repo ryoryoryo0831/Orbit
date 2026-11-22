@@ -47,6 +47,27 @@ class HistoryStore(context: Context) {
         prefs.edit { putString(KEY, arr.toString()) }
     }
 
+    /**
+     * 記録を [resolve] で置き換え（ほかのアプリのアドレス content:// → ファイル）、同じ動画の記録を 1 つにまとめる（新しいほうを残す）。
+     * 1.0.160 までは、同じ動画が content:// とファイルの 2 件に分かれて並ぶことがあった。置き換えたキーの組（古い → 新しい）を返す
+     */
+    fun normalize(resolve: (PlaylistItem) -> PlaylistItem): List<Pair<String, String>> = synchronized(lock) {
+        val list = all()
+        val moved = mutableListOf<Pair<String, String>>()
+        val mapped = list.map { e ->
+            val n = resolve(e.item)
+            if (n === e.item) e
+            else {
+                moved += e.item.key to n.key
+                e.copy(item = n.copy(durationMs = e.item.durationMs.takeIf { it > 0 } ?: n.durationMs))
+            }
+        }
+        // 新しい順に並んでいるので、最初に出てきたもの（新しいほう）を残す
+        val merged = mapped.distinctBy { it.item.key }
+        if (moved.isNotEmpty() || merged.size != list.size) save(merged)
+        moved
+    }
+
     fun add(item: PlaylistItem) = synchronized(lock) {
         val old = all()
         // 長さが分かっていない場合は、以前の記録の長さを引き継ぐ

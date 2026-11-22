@@ -34,6 +34,12 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListUiState())
 
     private suspend fun buildRows(): List<Row> = withContext(Dispatchers.IO) {
+        // 初めて開いたとき 1 回だけ：ほかのアプリのアドレスのままの記録をファイルに置き換え、同じ動画の 2 件を 1 つにまとめる
+        if (!normalized) {
+            normalized = true
+            val app = getApplication<Application>()
+            store.normalize { app.withLocalPath(it) }.forEach { (from, to) -> FileRecords.move(app, from, to) }
+        }
         val now = System.currentTimeMillis()
         // 以前のバージョンで記録された音楽は出さない
         store.all().filterNot { it.item.isAudio }.map { e ->
@@ -44,6 +50,12 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() = tick.update { it + 1 }
+
+    private companion object {
+        /** 記録の置き換え・まとめを、このアプリの起動中に済ませたか */
+        @Volatile
+        var normalized = false
+    }
 
     /** すべて消す。「元に戻す」で使う、消す前の記録を返す */
     fun clearAll(): List<HistoryStore.Entry> = store.all().also { store.clear() }
