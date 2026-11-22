@@ -297,5 +297,5 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
     }
 }
 
-/** 幅の広い画面で左に並べるタブ（ナビゲーションレール）の幅（layout-w600dp/activity_main.xml の 112dp と同じ） */
-const val RAIL_WIDTH_DP = 112
+/** 幅の広い画面で左に並べるタブ（ナビゲーションレール）の幅（layout-w600dp/activity_main.xml。標準の 80dp） */
+const val RAIL_WIDTH_DP = 80

@@ -20,11 +20,9 @@
         android:layout_weight="1"
         android:orientation="horizontal">
 
-        <!-- 幅は 112dp（標準は 80dp）：文字を 13sp にしても、文字を大きくした端末で「プレイリスト」が切れないように。
-             並びは上寄せ（真ん中だと、上が空いて押す場所が分かりにくかった） -->
         <com.google.android.material.navigationrail.NavigationRailView
             android:id="@+id/bottomNav"
-            android:layout_width="112dp"
+            android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:background="@color/surface"
             app:labelVisibilityMode="labeled"
@@ -32,7 +30,7 @@
             app:itemTextAppearanceActive="@style/TextAppearance.Orbit.RailLabel"
             app:itemTextAppearanceInactive="@style/TextAppearance.Orbit.RailLabel"
             app:menu="@menu/bottom_nav"
-            app:menuGravity="top"
+            app:menuGravity="center"
             app:paddingTopSystemWindowInsets="false" />
 
         <!-- 右側の列。id は幅の広い画面だけにある（MainActivity は無ければ何もしない）。

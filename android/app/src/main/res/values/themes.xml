@@ -107,10 +107,9 @@
         <item name="colorControlNormal">#FFFFFF</item>
     </style>
 
-    <!-- 左に縦に並べるタブ（タブレット・テレビ）の名前。標準の幅（80dp）では 12sp で「プレイリスト」が切れたので、
-         レールの幅を 112dp に広げて 13sp にしている（layout-w600dp/activity_main.xml） -->
+    <!-- 左に縦に並べるタブ（タブレット・テレビ）の名前。初期の 12sp だと「プレイリスト」が「プレイリス…」と切れた（テレビで確認） -->
     <style name="TextAppearance.Orbit.RailLabel" parent="TextAppearance.Material3.LabelMedium">
-        <item name="android:textSize">13sp</item>
+        <item name="android:textSize">11sp</item>
     </style>
 
     <!-- 押しやすい大きさのアイコンボタン（48dp 四方、アイコンは 26dp） -->
