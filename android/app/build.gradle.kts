@@ -36,7 +36,8 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a")
+            // x86_64 は PC のエミュレーターで確かめる用（公開するのは ARM の 2 つだけ）
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = false
         }
     }

@@ -24,9 +24,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Gradle の版は android/gradle/wrapper の指定（PC の Android Studio と同じ）を使う
       - uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: "8.13"
 
       - name: 署名鍵を復元
         env:
@@ -44,20 +43,20 @@ jobs:
           fi
 
       - name: テスト
-        run: gradle testReleaseUnitTest --no-daemon
+        run: ./gradlew testReleaseUnitTest --no-daemon
 
       # エラーが見つかったら止める（警告だけなら続ける）。どちらでも結果はログに出す
       - name: 品質チェック（Android Lint）
         run: |
           status=0
-          gradle lintRelease --no-daemon || status=$?
+          ./gradlew lintRelease --no-daemon || status=$?
           cat app/build/reports/lint.txt || true
           exit $status
 
       - name: APK をビルド
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: APK の名前を変更
         run: |
