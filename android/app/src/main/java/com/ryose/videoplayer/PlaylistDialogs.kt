@@ -19,7 +19,7 @@ object PlaylistDialogs {
 
         fun addTo(p: SavedPlaylist) {
             val added = store.addItems(p.id, items)
-            val msg = if (added == 0) "「${p.name}」にはすでに入っています" else "「${p.name}」に${added}本追加しました"
+            val msg = if (added == 0) "「${p.name}」にはすでに入っています" else "「${p.name}」に$added ${countUnit(items)}追加しました"
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             onDone()
         }
@@ -28,7 +28,7 @@ object PlaylistDialogs {
             context, "プレイリストに追加",
             lists.map { p ->
                 val icon = if (p.id == FavoriteMedia.PLAYLIST_ID) R.drawable.ic_star else R.drawable.ic_playlist
-                SheetItem(icon, p.name, "${p.items.size} 本") { addTo(p) }
+                SheetItem(icon, p.name, "${p.items.size} ${countUnit(p.items)}") { addTo(p) }
             } + SheetItem(R.drawable.ic_add, "新しいプレイリスト") {
                 promptName(context, "新しいプレイリスト", "") { name -> addTo(store.create(name)) }
             },
@@ -36,13 +36,13 @@ object PlaylistDialogs {
     }
 
     /** 名前を入力するダイアログ */
-    fun promptName(context: Context, title: String, initial: String, onOk: (String) -> Unit) {
+    fun promptName(context: Context, title: String, initial: String, hint: String = "プレイリストの名前", onOk: (String) -> Unit) {
         val dp = context.resources.displayMetrics.density
         val input = EditText(context).apply {
             setText(initial)
             setSelection(initial.length)
             setSingleLine()
-            hint = "プレイリストの名前"
+            this.hint = hint
         }
         val box = FrameLayout(context).apply {
             setPadding((24 * dp).toInt(), (8 * dp).toInt(), (24 * dp).toInt(), 0)

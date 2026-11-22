@@ -124,7 +124,7 @@ class NetTreeCollector(
 
     companion object {
         /** 集める件数の上限（端末内のフォルダと同じ） */
-        const val LIMIT = 5000
+        const val LIMIT = MediaFiles.TREE_LIMIT
         /** たどるフォルダの数の上限（ネットワークの全部をたどり続けないように） */
         private const val MAX_FOLDERS = 2000
         private const val FOLDER_TIMEOUT_MS = 20_000L

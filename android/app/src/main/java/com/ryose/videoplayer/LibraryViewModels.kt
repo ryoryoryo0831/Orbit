@@ -84,12 +84,7 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
         // お気に入りはいつも一番上に
         store.all().sortedBy { if (it.id == FavoriteMedia.PLAYLIST_ID) 0 else 1 }.map { p ->
             val total = p.items.sumOf { it.durationMs }
-            // 全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」で数える
-            val unit = when {
-                p.items.isNotEmpty() && p.items.all { it.isAudio } -> "曲"
-                p.items.none { it.isAudio } -> "本"
-                else -> "件"
-            }
+            val unit = countUnit(p.items)
             val info = "${p.items.size} $unit" + if (total > 0) " · ${formatTime(total)}" else ""
             val icon = if (p.id == FavoriteMedia.PLAYLIST_ID) R.drawable.ic_star else R.drawable.ic_playlist
             Row.Folder(p.name, info, icon, id = p.id)
@@ -144,12 +139,7 @@ class PlaylistViewModel(app: Application, saved: androidx.lifecycle.SavedStateHa
 
     private suspend fun build(): UiState = withContext(Dispatchers.Default) {
         val p = playlistId?.let { store.get(it) } ?: return@withContext UiState(loaded = true, missing = true)
-        // 全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」で数える
-        val unit = when {
-            p.items.isNotEmpty() && p.items.all { it.isAudio } -> "曲"
-            p.items.none { it.isAudio } -> "本"
-            else -> "件"
-        }
+        val unit = countUnit(p.items)
         UiState(
             loaded = true,
             name = p.name,

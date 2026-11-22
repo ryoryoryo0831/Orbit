@@ -102,6 +102,7 @@ class ServerStore(context: Context) {
             // 壊れた中身は消さずに別の名前で残す（このあと追加・削除して保存したときに、上書きで失わないように）
             PlaybackLog.add("NAS などの登録を読めませんでした（${e.javaClass.simpleName}）。元の中身は list_broken に残します")
             if (!prefs.contains("list_broken")) prefs.edit { putString("list_broken", raw) }
+            DataProblems.report("NAS などのサーバーの登録")
             return emptyList<Server>().also { cache = it }
         }
         var failed = false

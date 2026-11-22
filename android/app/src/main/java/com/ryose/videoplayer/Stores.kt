@@ -35,6 +35,7 @@ class HistoryStore(context: Context) {
             // 読めなかった中身は、次に保存したときに上書きして消してしまわないよう別の名前で残しておく
             PlaybackLog.add("履歴を読めませんでした（${e.javaClass.simpleName}）。元の中身は残しておきます")
             if (!prefs.contains("$KEY.broken")) prefs.edit { putString("$KEY.broken", raw) }
+            DataProblems.report("再生履歴")
             emptyList()
         }
     }
@@ -141,6 +142,7 @@ class PlaylistStore(context: Context) {
         // 読めなかったファイルは、次に保存したときに上書きして消してしまわないよう別名で残しておく
         PlaybackLog.add("プレイリストを読めませんでした（${e.javaClass.simpleName}）。元のファイルは別の名前で残します")
         runCatching { file.renameTo(File(filesDirOf(file), "playlists.broken-${System.currentTimeMillis()}.json")) }
+        DataProblems.report("プレイリスト（お気に入りの動画も）")
         emptyList()
     }
 

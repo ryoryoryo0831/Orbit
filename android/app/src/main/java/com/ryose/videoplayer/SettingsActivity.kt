@@ -97,6 +97,16 @@ class SettingsActivity : AppCompatActivity() {
                 startImport()
                 true
             }
+            findPreference<androidx.preference.Preference>("backup_undo_import")?.let { pref ->
+                // 控えがあるとき（読み込んだことがあるとき）だけ出す
+                val summary = Backup.beforeImportSummary(requireContext())
+                pref.isVisible = summary != null
+                pref.summary = summary
+                pref.setOnPreferenceClickListener {
+                    confirmUndoImport()
+                    true
+                }
+            }
             findPreference<androidx.preference.Preference>("playback_log")?.setOnPreferenceClickListener {
                 PlaybackLogScreen.show(requireContext()) { refreshCrashSummary() }
                 true
@@ -191,14 +201,26 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
 
-        private fun importFrom(uri: android.net.Uri) {
+        private fun confirmUndoImport() {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("読み込む前に戻しますか？")
+                .setMessage("最後に読み込む直前の設定・お気に入り・プレイリスト・登録・履歴に戻します。戻したあと、アプリを起動し直します。")
+                .setPositiveButton("戻す") { _, _ -> importText { Backup.beforeImportFile(it).takeIf { f -> f.exists() }?.readText() } }
+                .setNegativeButton("キャンセル", null)
+                .show()
+        }
+
+        private fun importFrom(uri: android.net.Uri) = importText { Backup.readText(it, uri) }
+
+        /** [read] で読んだ中身を読み込む（書き出したファイル・読み込む前の控え） */
+        private fun importText(read: (android.content.Context) -> String?) {
             val ctx = requireContext().applicationContext
             // 再生中なら先に止める（読み込んだ中身の上に、再生サービスが古い続きの位置などを書かないように）
             ctx.stopService(android.content.Intent(ctx, PlaybackService::class.java))
             // 画面を回しても止まらないように、アプリ全体の流れで行う
             Backup.scope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    val text = Backup.readText(ctx, uri)
+                    val text = runCatching { read(ctx) }.getOrNull()
                     if (text == null) Backup.Result(false, "ファイルを読めませんでした（大きすぎるか、読めない場所です）")
                     else runCatching { Backup.import(ctx, text) }.getOrElse { Backup.Result(false, "読み込めませんでした（${it.message.orEmpty()}）") }
                 }

@@ -121,7 +121,10 @@ object MediaFiles {
      * 隠しフォルダと「.nomedia」のあるフォルダ（アプリのキャッシュなど）は入らない。
      * 多すぎるときは [limit] 件まで（再生キューが重くなりすぎないように）
      */
-    fun mediaInTree(context: Context, dir: File, limit: Int = 5000): List<PlaylistItem> {
+    /** 「サブフォルダも含めて再生」で集める上限（端末内・ネットワークで共通） */
+    const val TREE_LIMIT = 5000
+
+    fun mediaInTree(context: Context, dir: File, limit: Int = TREE_LIMIT): List<PlaylistItem> {
         val durations = durationsInTree(context, dir, MediaStore.Video.Media.EXTERNAL_CONTENT_URI) +
             durationsInTree(context, dir, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
         val result = ArrayList<PlaylistItem>()

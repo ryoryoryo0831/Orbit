@@ -137,7 +137,7 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
      */
     protected fun listColumns(): Int {
         val w = resources.configuration.screenWidthDp
-        val usable = if (w >= 600) w - 80 else w
+        val usable = if (w >= 600) w - RAIL_WIDTH_DP else w
         return (usable / 440).coerceIn(1, 3)
     }
 
@@ -296,3 +296,6 @@ abstract class BaseListFragment : Fragment(R.layout.fragment_list) {
         const val KEY_PENDING_DELETE = "pending_delete"
     }
 }
+
+/** 幅の広い画面で左に並べるタブ（ナビゲーションレール）の幅（layout-w600dp/activity_main.xml の 112dp と同じ） */
+const val RAIL_WIDTH_DP = 112

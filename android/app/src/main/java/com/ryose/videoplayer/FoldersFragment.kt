@@ -381,7 +381,9 @@ class FoldersFragment : BaseListFragment() {
                 }
                 play + listOf(
                     SheetItem(R.drawable.ic_edit, "表示名を変更") {
-                        PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name) { name -> vm.renameFavorite(uri, name) }
+                        PlaylistDialogs.promptName(requireContext(), "表示名を変更", row.name, hint = "お気に入りに表示する名前") { name ->
+                            vm.renameFavorite(uri, name)
+                        }
                     },
                     SheetItem(R.drawable.ic_star_border, "お気に入りから外す") { toggleFavorite(uri, row.name) },
                 )
@@ -447,7 +449,9 @@ class FoldersFragment : BaseListFragment() {
             if (media.isEmpty()) {
                 Toast.makeText(ctx, "このフォルダとサブフォルダには動画や音楽がありません", Toast.LENGTH_SHORT).show()
             } else {
-                if (media.size >= 5000) Toast.makeText(ctx, "多すぎるので、最初の 5000 件を再生します", Toast.LENGTH_LONG).show()
+                if (media.size >= MediaFiles.TREE_LIMIT) {
+                    Toast.makeText(ctx, "多すぎるので、最初の ${MediaFiles.TREE_LIMIT} 件を再生します", Toast.LENGTH_LONG).show()
+                }
                 action(media)
             }
         }

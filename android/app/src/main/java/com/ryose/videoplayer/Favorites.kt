@@ -18,14 +18,23 @@ class FavoriteFolders(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("favorites", Context.MODE_PRIVATE)
 
-    fun all(): List<Entry> = try {
-        val arr = JSONArray(prefs.getString(KEY, "[]"))
-        (0 until arr.length()).map {
-            val o = arr.getJSONObject(it)
-            Entry(o.getString("uri").toUri(), o.optString("title"))
+    fun all(): List<Entry> {
+        val raw = prefs.getString(KEY, "[]") ?: "[]"
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Entry(o.getString("uri").toUri(), o.optString("title"))
+            }
+        } catch (e: Exception) {
+            // 読めなかった中身は、次の追加・名前の変更で上書きして消さないよう、別の名前で残しておく（1.0.160 までは消えていた）
+            if (!prefs.contains("$KEY.broken")) {
+                prefs.edit { putString("$KEY.broken", raw) }
+                PlaybackLog.add("お気に入りのフォルダを読めませんでした（${e.javaClass.simpleName}）。元の中身は $KEY.broken に残します")
+                DataProblems.report("お気に入りのフォルダ")
+            }
+            emptyList()
         }
-    } catch (_: Exception) {
-        emptyList()
     }
 
     private fun save(list: List<Entry>) {

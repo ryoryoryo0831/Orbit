@@ -31,6 +31,13 @@ data class Video(
     fun toItem() = PlaylistItem(uri, title, path, durationMs)
 }
 
+/** 数え方：全部が曲なら「曲」、全部が動画なら「本」、混ざっていれば「件」（プレイリストの件数など） */
+fun countUnit(items: List<PlaylistItem>): String = when {
+    items.isNotEmpty() && items.all { it.isAudio } -> "曲"
+    items.none { it.isAudio } -> "本"
+    else -> "件"
+}
+
 /**
  * 再生する1件分。path があればファイルとして直接開き（字幕の自動読み込みもできる）、
  * 無ければ uri（他アプリから渡されたもの等）をファイルディスクリプタ経由で開く。

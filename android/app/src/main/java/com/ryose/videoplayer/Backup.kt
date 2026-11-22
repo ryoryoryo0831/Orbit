@@ -87,6 +87,17 @@ object Backup {
     /** 読み込んだ結果 */
     data class Result(val ok: Boolean, val message: String)
 
+    /** 最後に読み込む直前のデータの控え（[import] が作る。「読み込む前に戻す」で使う） */
+    fun beforeImportFile(context: Context) = File(context.filesDir, "before-import.json")
+
+    /** 「読み込む前に戻す」の説明（控えが無ければ null） */
+    fun beforeImportSummary(context: Context): String? {
+        val f = beforeImportFile(context)
+        if (!f.exists()) return null
+        val at = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN).format(Date(f.lastModified()))
+        return "$at に読み込む直前のデータに戻します（今のデータは、また控えに残ります）"
+    }
+
     /** 読み込む。今のデータは置き換える（パスワードは同じ端末なら残す）。読み込めたらアプリを起動し直す必要がある */
     fun import(context: Context, text: String): Result {
         val root = runCatching { JSONObject(text) }.getOrNull() ?: return Result(false, "Orbit の書き出したファイルではないようです")
@@ -103,6 +114,12 @@ object Backup {
         }
         // 先に今のプレイリストの書き込みが終わるのを待つ（読み込んだ中身を、古い書き込みで上書きしないように）
         FileSaver.flush()
+        // 置き換える前に、今のデータの控えを取る（古いファイルを間違えて選んでも「読み込む前に戻す」で戻せるように）。
+        // 控えを取れなければ、何も変えずにやめる
+        val snapshot = runCatching { export(context) }.getOrNull()
+        if (snapshot == null || !FileSaver.writeNow(beforeImportFile(context), snapshot)) {
+            return Result(false, "今のデータの控えを取れなかったので、読み込みをやめました（端末の空き容量を確かめてください）。今のデータはそのままです")
+        }
         // 同じ端末なら、今のパスワード（この端末の鍵で暗号化したもの）を残す
         val oldServers = runCatching { JSONArray(prefsOf(context, "servers").getString("list", "[]")) }.getOrNull()
         var failed = false

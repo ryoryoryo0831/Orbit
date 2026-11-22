@@ -1,13 +1,10 @@
 package com.ryose.videoplayer
 
 import android.os.Bundle
-import android.os.Parcelable
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.widget.SearchView
 import androidx.core.view.MenuProvider
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -24,7 +21,7 @@ import kotlinx.coroutines.launch
  * 「動画」タブ：端末内のすべての動画（すべて／フォルダ別、リスト／グリッド）。
  * 状態と操作は VideosViewModel にあり、ここは表示するだけ
  */
-class VideosFragment : BaseListFragment() {
+class VideosFragment : LibraryTabFragment() {
 
     private lateinit var vm: VideosViewModel
     private lateinit var allChip: Chip
@@ -33,14 +30,6 @@ class VideosFragment : BaseListFragment() {
     private lateinit var limitedBanner: View
     /** 「選び直す」で許可の画面を出したので、戻ってきたら読み込み直す */
     private var reloadOnResume = false
-    /** フォルダに入る前の一覧のスクロール位置（戻ったときに戻す） */
-    private var savedScroll: Parcelable? = null
-    /** フォルダを開いた・閉じたあと、その一覧を表示したときにすること（一番上を見せる・前の位置に戻す） */
-    private var afterShown: Pair<String?, () -> Unit>? = null
-
-    private val backCallback = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() = closeFolder()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,27 +39,15 @@ class VideosFragment : BaseListFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
         // 動画が増えた・消えたら自動で読み込み直す
-        viewLifecycleOwner.lifecycle.addObserver(
-            MediaWatcher(requireContext().applicationContext, MediaStore.Video.Media.EXTERNAL_CONTENT_URI) {
-                if (vm.state.value.loaded) vm.load()
-            }
-        )
+        watchMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI) { if (vm.state.value.loaded) vm.load() }
 
         // 「すべて」「フォルダ別」の切り替え
         val chips = view.findViewById<ChipGroup>(R.id.chips)
         chips.visibility = View.VISIBLE
-        fun chip(label: String, byFolder: Boolean) = Chip(requireContext()).apply {
-            // テレビのリモコンで選んでいるときは青い枠
-            foreground = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.fg_focus_ring)
-            id = View.generateViewId()
-            text = label
-            isCheckable = true
-            setOnClickListener {
-                vm.setByFolder(byFolder)
-                updateChips(vm.state.value)
-            }
+        fun chip(label: String, byFolder: Boolean) = choiceChip(label) {
+            vm.setByFolder(byFolder)
+            updateChips(vm.state.value)
         }
         allChip = chip("すべて", false)
         folderChip = chip("フォルダ別", true)
@@ -95,19 +72,19 @@ class VideosFragment : BaseListFragment() {
     private fun render(s: VideosViewModel.UiState) {
         updateChips(s)
         limitedBanner.isVisible = s.hasAccess && s.limited
-        backCallback.isEnabled = isResumed && s.openedFolder != null
         when {
-            !s.hasAccess -> showNeedPermission()
-            !s.loaded -> loading.visibility = View.VISIBLE
+            !s.hasAccess -> {
+                showNeedPermission()
+                onListHidden(s.openedFolder)
+            }
+            !s.loaded -> {
+                loading.visibility = View.VISIBLE
+                onListHidden(s.openedFolder)
+            }
             else -> {
                 showRows(s.rows, s.emptyMessage)
                 // フォルダを開いた・閉じた直後なら、その一覧が出たところで位置を合わせる
-                afterShown?.let { (folder, action) ->
-                    if (folder == s.openedFolder) {
-                        afterShown = null
-                        action()
-                    }
-                }
+                onListShown(s.openedFolder)
             }
         }
     }
@@ -126,11 +103,6 @@ class VideosFragment : BaseListFragment() {
         render(vm.state.value)
     }
 
-    override fun onPause() {
-        super.onPause()
-        backCallback.isEnabled = false
-    }
-
     override fun subtitle() = vm.state.value.subtitle
 
     /** リスト／グリッドの切り替え（グリッドでは見出しやフォルダの行は横いっぱいに） */
@@ -140,7 +112,7 @@ class VideosFragment : BaseListFragment() {
         if (grid) {
             // 幅の広い画面ではタブが左にあるので、その分を引いて考える
             val w = resources.configuration.screenWidthDp
-            val widthDp = if (w >= 600) w - 80 else w
+            val widthDp = if (w >= 600) w - RAIL_WIDTH_DP else w
             val span = (widthDp / 180).coerceAtLeast(2)
             if ((list.layoutManager as? GridLayoutManager)?.spanCount != span) {
                 list.layoutManager = GridLayoutManager(requireContext(), span).apply {
@@ -158,30 +130,16 @@ class VideosFragment : BaseListFragment() {
 
     override fun onFilesChanged() = vm.load()
 
-    private fun openFolder(dir: String?, after: () -> Unit) {
-        afterShown = dir to after
-        vm.openFolder(dir)
-    }
+    override fun openedId(): String? = vm.state.value.openedFolder
 
-    override fun goToTopLevel(): Boolean {
-        if (vm.state.value.openedFolder == null) return false
-        savedScroll = null
-        openFolder(null) { list.scrollToPosition(0) }
-        return true
-    }
+    // フォルダの行の id は「vfolder:フォルダの場所」、開いたあとの openedFolder はフォルダの場所
+    override fun idOf(row: Row.Folder?): String? = row?.id?.removePrefix("vfolder:")
 
-    private fun closeFolder() {
-        val scroll = savedScroll
-        savedScroll = null
-        openFolder(null) { scroll?.let { list.layoutManager?.onRestoreInstanceState(it) } }
-    }
+    override fun requestOpen(row: Row.Folder?) = vm.openFolder(idOf(row))
 
     override fun onRowClick(position: Int) {
         when (val row = adapter.rows.getOrNull(position)) {
-            is Row.Folder -> row.id?.removePrefix("vfolder:")?.let { dir ->
-                savedScroll = list.layoutManager?.onSaveInstanceState()
-                openFolder(dir) { list.scrollToPosition(0) }
-            }
+            is Row.Folder -> if (row.id?.startsWith("vfolder:") == true) enter(row)
             // 「すべて」の一覧は関係ない動画が並ぶので、終わったら次へ進むかは設定しだい（初期設定は進まない）。
             // フォルダを開いて再生したときは、いつも次へ進む
             is Row.Media -> playMediaAt(
@@ -209,21 +167,7 @@ class VideosFragment : BaseListFragment() {
     private val menuProvider = object : MenuProvider {
         override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
             menuInflater.inflate(R.menu.videos_menu, menu)
-            val searchItem = menu.findItem(R.id.action_search)
-            val searchView = searchItem.actionView as SearchView
-            searchView.queryHint = getString(R.string.search)
-            val query = vm.state.value.query
-            if (query.isNotEmpty()) {
-                searchItem.expandActionView()
-                searchView.setQuery(query, false)
-            }
-            searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-                override fun onQueryTextSubmit(q: String?) = true
-                override fun onQueryTextChange(q: String?): Boolean {
-                    vm.setQuery(q.orEmpty())
-                    return true
-                }
-            })
+            setUpSearch(menu, getString(R.string.search), vm.state.value.query, vm::setQuery)
         }
 
         override fun onPrepareMenu(menu: Menu) {

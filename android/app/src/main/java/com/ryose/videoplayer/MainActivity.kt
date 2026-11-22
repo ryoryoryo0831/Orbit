@@ -167,6 +167,8 @@ class MainActivity : AppCompatActivity() {
         nowPlaying.onScreenStart()
         // 更新のダウンロード中に画面を回した・ほかの画面から戻ったときは、進み具合の表示を引き継ぐ
         AppUpdater.attach(this)
+        // 保存していたデータが読めなかったら知らせる（黙って空にすると「消えた」ように見えるので）
+        DataProblems.showIfAny(this)
     }
 
     override fun onStop() {
