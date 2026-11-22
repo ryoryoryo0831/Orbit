@@ -132,7 +132,8 @@ object FileActions {
                     val newSub = File(sub.parentFile, newBase + rest)
                     if (!newSub.exists() && sub.renameTo(newSub)) changed += listOf(sub.path, newSub.path)
                 }
-                ResumeStore(context).migrate(file.path, target.path)
+                // 続きの位置・速度・明るさ・音声と字幕の選択・A-B などを、新しい名前へまとめて移す
+                FileRecords.move(context, file.path, target.path)
                 // プレイリスト・お気に入り・履歴も新しい名前に合わせる（古い名前のままだと開けなくなる）
                 val renamed = PlaylistItem.fromFile(target)
                 PlaylistStore(context).replaceEverywhere(item.key, renamed)
@@ -173,7 +174,7 @@ object FileActions {
 
     /** 削除したファイルの履歴・再生位置・プレイリスト（お気に入りも）の記録を消す */
     fun forget(context: Context, item: PlaylistItem) {
-        ResumeStore(context).clear(item.key)
+        FileRecords.forget(context, item.key)
         HistoryStore(context).remove(item.key)
         PlaylistStore(context).replaceEverywhere(item.key, null)
     }

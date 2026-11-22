@@ -52,7 +52,10 @@ object Secrets {
     }
 
     /** 元に戻す。暗号化されていない古い値はそのまま返す。戻せない（鍵が無い）場合は空 */
-    fun decrypt(value: String): String = decryptOrNull(value) ?: ""
+    fun decrypt(value: String): String = decryptOrNull(value) ?: "".also {
+        // 黙って空のパスワードでつなぐと「サーバーに接続できません」としか出ず、原因が分からないので残す
+        PlaybackLog.addOnce("保存したパスワードを元に戻せなかった（鍵保管庫が使えない・鍵が消えた）。サーバーの設定で入れ直してください")
+    }
 
     /** 元に戻す。戻せない（鍵が無い・鍵保管庫が一時的に使えない）場合は null（呼ぶ側で暗号を消さずに残せるように） */
     fun decryptOrNull(value: String): String? {

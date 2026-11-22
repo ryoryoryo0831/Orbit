@@ -35,7 +35,8 @@ object TagText {
         // 端末は文字コードを推測して読むので、Shift_JIS のタグを中国語・韓国語などと取り違えて、
         // 漢字だらけの別の文字列にすることもある（欧文の化けと違って、見ただけでは分からない）。
         // そのため、ファイルのタグを直接読めるものは、いつも読んで比べる
-        val raw = path?.let { AudioTags.read(it) }
+        // 前に読んだときからファイルが変わっていなければ、覚えているタグを使う（TagCache）
+        val raw = path?.let { TagCache.read(it) }
         val result = Id3Tags.Tags(pick(t, raw?.title), pick(a, raw?.artist), pick(l, raw?.album))
         if (result != Id3Tags.Tags(t, a, l)) PlaybackLog.add("タグを読み直した：端末「$t」→「${result.title ?: "（壊れているのでファイル名）"}」")
         return result

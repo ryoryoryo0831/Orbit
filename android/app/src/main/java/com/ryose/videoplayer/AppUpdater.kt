@@ -15,9 +15,14 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -91,10 +96,6 @@ object AppUpdater {
 
     /** ダイアログを出してよいか（閉じられた・作り直された画面には出さない） */
     private fun alive(activity: AppCompatActivity) = !activity.isFinishing && !activity.isDestroyed
-
-    /** ダウンロード中（同じ APK を 2 つ同時にダウンロードしないように） */
-    @Volatile
-    private var downloading = false
 
     fun currentVersionCode(context: Context): Long =
         PackageInfoCompat.getLongVersionCode(context.packageManager.getPackageInfo(context.packageName, 0))
@@ -173,8 +174,29 @@ object AppUpdater {
     /** ダウンロードした APK の置き場所（アプリのキャッシュ。file_paths.xml の update） */
     private fun apkFile(context: Context, update: UpdateRules.Update) = File(File(context.cacheDir, "update"), update.apkName)
 
+    /** ダウンロードの進み具合（アプリ全体で 1 つ。画面を回して作り直しても止めずに続ける） */
+    private sealed interface DownloadState {
+        /** [percent] が -1 のときは、まだ分からない */
+        data class Running(val update: UpdateRules.Update, val percent: Int) : DownloadState
+        /** 終わった。[error] が null なら成功で [file] を入れる */
+        data class Done(val update: UpdateRules.Update, val file: File?, val error: String?) : DownloadState
+    }
+
+    private val downloadState = MutableStateFlow<DownloadState?>(null)
+    private var downloadJob: Job? = null
+    // 画面ではなくアプリ全体で動かす（1.0.160 までは画面に結び付いていて、回すとダウンロードが黙って止まっていた）
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** 進み具合を出している画面（同じ画面に二重に出さない） */
+    private val showingIn = java.util.Collections.newSetFromMap(java.util.WeakHashMap<AppCompatActivity, Boolean>())
+
+    /** 画面が表に出たときに呼ぶ：ダウンロード中なら進み具合を出し直し、終わっていればインストールへ進む */
+    fun attach(activity: AppCompatActivity) {
+        if (downloadState.value != null) showProgress(activity)
+    }
+
     private fun download(activity: AppCompatActivity, update: UpdateRules.Update) {
-        if (downloading) {
+        if (downloadJob?.isActive == true) {
             Toast.makeText(activity, "ダウンロードしています。少し待ってください", Toast.LENGTH_SHORT).show()
             return
         }
@@ -184,6 +206,35 @@ object AppUpdater {
             install(activity, file)
             return
         }
+        downloadState.value = DownloadState.Running(update, -1)
+        downloadJob = appScope.launch {
+            downloadState.value = try {
+                withContext(Dispatchers.IO) {
+                    fetchApk(update, file) { percent -> downloadState.value = DownloadState.Running(update, percent) }
+                }
+                DownloadState.Done(update, file, null)
+            } catch (e: CancellationException) {
+                // キャンセルを押した
+                file.delete()
+                downloadState.value = null
+                throw e
+            } catch (e: Exception) {
+                file.delete()
+                PlaybackLog.add("更新をダウンロードできなかった：${e.javaClass.simpleName}: ${e.message}")
+                DownloadState.Done(update, null, e.message.orEmpty())
+            }
+        }
+        showProgress(activity)
+    }
+
+    /** ダウンロードの進み具合を出し、終わったらインストール（失敗なら理由）へ進む */
+    private fun showProgress(activity: AppCompatActivity) {
+        val update = when (val s = downloadState.value) {
+            is DownloadState.Running -> s.update
+            is DownloadState.Done -> s.update
+            null -> return
+        }
+        if (!alive(activity) || !showingIn.add(activity)) return
         val dp = activity.resources.displayMetrics.density
         val bar = LinearProgressIndicator(activity).apply { max = 100; isIndeterminate = true }
         val label = TextView(activity).apply { text = "ダウンロードしています…" }
@@ -194,42 +245,36 @@ object AppUpdater {
             addView(label)
             addView(bar)
         }
-        var job: Job? = null
         val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle("Orbit ${update.versionName}")
             .setView(box)
             .setCancelable(false)
-            .setNegativeButton("キャンセル") { _, _ -> job?.cancel() }
+            .setNegativeButton("キャンセル") { _, _ -> downloadJob?.cancel() }
             .show()
-        downloading = true
-        job = activity.lifecycleScope.launch {
-            val error = try {
-                withContext(Dispatchers.IO) {
-                    fetchApk(update, file) { percent ->
-                        bar.post {
+        activity.lifecycleScope.launch {
+            try {
+                val end = downloadState
+                    .onEach { s ->
+                        if (s is DownloadState.Running && s.percent >= 0) {
                             bar.isIndeterminate = false
-                            bar.setProgressCompat(percent, true)
-                            label.text = "ダウンロードしています… $percent%"
+                            bar.setProgressCompat(s.percent, true)
+                            label.text = "ダウンロードしています… ${s.percent}%"
                         }
                     }
+                    .first { it !is DownloadState.Running }
+                dialog.dismiss()
+                if (end !is DownloadState.Done || !alive(activity)) return@launch
+                // 結果を受け取ったのはこの画面（ほかの画面で二重にインストールの画面を出さない）
+                downloadState.value = null
+                if (end.error != null || end.file == null) {
+                    message(activity, "ダウンロードできませんでした", "インターネットにつながっているか確かめてください。\n（${end.error.orEmpty()}）")
+                } else {
+                    install(activity, end.file)
                 }
-                null
-            } catch (e: CancellationException) {
-                // キャンセルを押した・画面が閉じられた（回したときなど）。ダイアログは画面と一緒に片付く
-                file.delete()
-                throw e
-            } catch (e: Exception) {
-                e
             } finally {
-                downloading = false
-            }
-            if (!alive(activity)) return@launch
-            dialog.dismiss()
-            if (error != null) {
-                file.delete()
-                message(activity, "ダウンロードできませんでした", "インターネットにつながっているか確かめてください。\n（${error.message.orEmpty()}）")
-            } else {
-                install(activity, file)
+                // 画面が閉じられた（回したときなど）：ダイアログだけ片付ける。ダウンロードは続き、次の画面が引き継ぐ
+                showingIn.remove(activity)
+                if (dialog.isShowing) dialog.dismiss()
             }
         }
     }

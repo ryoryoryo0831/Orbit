@@ -1,6 +1,7 @@
 package com.ryose.videoplayer
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -123,14 +124,30 @@ object Playlist {
 /** 再生画面を開いて再生を始める（音楽なら音楽の画面、動画なら動画の画面） */
 fun Activity.playItems(items: List<PlaylistItem>, index: Int, shuffle: Boolean = false, advance: Boolean = true) {
     if (index !in items.indices) return
-    Playlist.set(this, items, shuffle, advance)
-    val cls = if (items[index].isAudio) AudioPlayerActivity::class.java else PlayerActivity::class.java
+    // ほかのアプリから渡された content:// のままのもの（履歴など）は、読める本当のファイルが分かればそちらで開く
+    // （渡されたときの許可は時間がたつと切れて、開けなくなるため）
+    val list = items.toMutableList()
+    list[index] = withLocalPath(list[index])
+    Playlist.set(this, list, shuffle, advance)
+    val cls = if (list[index].isAudio) AudioPlayerActivity::class.java else PlayerActivity::class.java
+    // FLAG_GRANT_READ_URI_PERMISSION は付けない。開くのは同じアプリの画面なので要らず、
+    // 許可の切れた content:// に付けると startActivity が SecurityException で落ちる（1.0.160 まで、履歴から開いたとき）
     startActivity(
         Intent(this, cls)
-            .setData(items[index].uri)
+            .setData(list[index].uri)
             .putExtra(EXTRA_INDEX, index)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     )
+}
+
+/**
+ * path の無い content:// のものに、読める本当のファイルが見つかれば path を付けて返す（見つからなければそのまま）。
+ * 文字列を調べてファイルがあるかを見るだけなので、画面の処理から呼んでもよい（MediaStore の問い合わせは 1 件だけ）
+ */
+fun Context.withLocalPath(item: PlaylistItem): PlaylistItem {
+    if (item.path != null || item.uri.scheme != "content") return item
+    val path = resolvePath(item.uri) ?: return item
+    PlaybackLog.add("ほかのアプリのアドレスを、ファイルの場所に置き換えた：${item.title}")
+    return PlaylistItem.fromFile(File(path), item.durationMs)
 }
 
 const val EXTRA_INDEX = "index"
@@ -210,8 +227,9 @@ class ResumeStore(private val context: Context) {
         val meta = context.getSharedPreferences("resume_meta", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (now - meta.getLong("pruned_at", 0) < 24 * 60 * 60 * 1000L) return
-        val gone = prefs.all.keys.filter { it.startsWith("/") && !File(it).exists() && volumeAvailable(it) }
-        if (gone.isNotEmpty()) prefs.edit { gone.forEach { remove(it) } }
+        // 続きの位置だけでなく、速度・明るさ・音声と字幕の選択・A-B なども一緒に片付ける
+        val removed = FileRecords.prune(context) { it.startsWith("/") && !File(it).exists() && volumeAvailable(it) }
+        if (removed > 0) PlaybackLog.add("消えたファイルの記録を片付けた：$removed 件")
         meta.edit { putLong("pruned_at", now) }
     }
 
@@ -289,6 +307,7 @@ fun Context.queryDisplayName(uri: Uri): String? = try {
 @Suppress("DEPRECATION")
 fun Context.resolvePath(uri: Uri): String? {
     if (uri.scheme == "file") return uri.path
+    pathInProviderUri(uri)?.let { return it }
     if (uri.authority != MediaStore.AUTHORITY || !(hasMediaAccess(false) || hasMediaAccess(true))) return null
     return try {
         contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
@@ -297,4 +316,34 @@ fun Context.resolvePath(uri: Uri): String? {
     } catch (_: Exception) {
         null
     }
+}
+
+/**
+ * ファイルマネージャーなどの content:// の中に書かれているファイルの場所を取り出す（読めるものだけ）。
+ * - 端末のファイル（Android の「ファイル」アプリ）：…externalstorage.documents/document/primary:Movies/a.mp4
+ * - Material Files など：…/file%253A%252F%252F%252Fstorage%252F…（file:///storage/… を二重に符号化したもの）
+ */
+// ほかのアプリが書いた「/sdcard/…」という文字を見分けるためなので、/sdcard を直接書く
+@SuppressLint("SdCardPath")
+fun pathInProviderUri(uri: Uri): String? {
+    val candidates = mutableListOf<String>()
+    if (uri.authority == "com.android.externalstorage.documents") {
+        // …/tree/primary:Movies/document/primary:Movies/a.mp4 なら最後の id がファイル
+        uri.pathSegments.lastOrNull()?.let { id ->
+            val vol = id.substringBefore(':')
+            val rel = id.substringAfter(':', "")
+            @Suppress("DEPRECATION")
+            val root = if (vol == "primary") Environment.getExternalStorageDirectory().path else "/storage/$vol"
+            candidates += "$root/$rel"
+        }
+    }
+    uri.pathSegments.forEach { seg ->
+        var s = seg
+        repeat(3) {
+            if (s.startsWith("file://")) s.toUri().path?.let { candidates += it }
+            else if (s.startsWith("/storage/") || s.startsWith("/sdcard/")) candidates += s
+            s = Uri.decode(s)
+        }
+    }
+    return candidates.firstOrNull { File(it).let { f -> f.isFile && f.canRead() } }
 }

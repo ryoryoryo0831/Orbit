@@ -201,6 +201,19 @@ class PlayerActivity : AppCompatActivity() {
     private val pickSubtitle =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { addSubtitleFromUri(it) } }
 
+    /**
+     * この画面から設定・字幕ファイルの選択などを開いたところ（[onResume] で戻す）。
+     * 自分で別の画面を開いたときも Android は [onUserLeaveHint] を呼ぶので、そのときは小窓にしない
+     * （1.0.160 までは、再生中に︙→設定で動画が勝手に自由な小窓になり、戻るとホーム画面に出ていた）
+     */
+    private var openingInnerScreen = false
+
+    /** この画面から別の画面を開く（小窓に切り替えないように印を付けてから） */
+    private fun openInnerScreen(open: () -> Unit) {
+        openingInnerScreen = true
+        open()
+    }
+
     private val listener = object : PlaybackService.Listener {
         override fun onPlayerEvent(e: MediaPlayer.Event) = handleEvent(e)
         // 選ばれた動画を読み込んでいる間は、前に再生していたもの（音楽など）の切り替わり・終了で閉じない
@@ -291,7 +304,7 @@ class PlayerActivity : AppCompatActivity() {
         titleView = findViewById(R.id.titleView)
         seekBar = findViewById(R.id.seekBar)
         dvdPad = DvdPad(findViewById(R.id.dvdPad), handler, { svc }, { inPip || locked })
-        trackMenus = TrackMenus(this, { svc }, { pickSubtitle.launch(arrayOf("*/*")) }, { showInfo(it) })
+        trackMenus = TrackMenus(this, { svc }, { openInnerScreen { pickSubtitle.launch(arrayOf("*/*")) } }, { showInfo(it) })
         abBar = AbRepeatBar(
             findViewById(R.id.abPanel),
             findViewById<AbRangeView>(R.id.abRange).also { it.seekBar = seekBar },
@@ -477,6 +490,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        openingInnerScreen = false
         readSettings()
         // 設定画面で向きの設定が変わっていたら反映する
         applyOrientation()
@@ -870,7 +884,9 @@ class PlayerActivity : AppCompatActivity() {
                 val hw = s.toggleHwDecoding()
                 showInfo(if (hw) "ハードウェアデコードに切り替えました" else "ソフトウェアデコードに切り替えました")
             })
-            add(SheetItem(R.drawable.ic_settings, "設定") { startActivity(Intent(this@PlayerActivity, SettingsActivity::class.java)) })
+            add(SheetItem(R.drawable.ic_settings, "設定") {
+                openInnerScreen { startActivity(Intent(this@PlayerActivity, SettingsActivity::class.java)) }
+            })
         }
         ActionSheet.show(this, s.displayTitle(), items, tiles = tiles)
     }
@@ -1491,6 +1507,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        if (openingInnerScreen) return
         val s = svc ?: return
         if (!s.isPlaying || s.renderer != null) return
         when {
@@ -1555,7 +1572,9 @@ class PlayerActivity : AppCompatActivity() {
             )
             .setPositiveButton("設定を開く") { _, _ ->
                 runCatching {
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
+                    openInnerScreen {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
+                    }
                 }
             }
             .apply { if (hasPip) setNeutralButton("いつもの小窓を使う") { _, _ -> enterPip() } }

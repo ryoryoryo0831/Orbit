@@ -30,6 +30,12 @@ class SettingsActivity : AppCompatActivity() {
         super.attachBaseContext(AppSettings.tvScaled(newBase))
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 更新のダウンロード中に画面を回した（作り直した）ときは、進み具合の表示を引き継ぐ
+        AppUpdater.attach(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdgeWithoutScrim()
         super.onCreate(savedInstanceState)

@@ -165,6 +165,8 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         nowPlaying.onScreenStart()
+        // 更新のダウンロード中に画面を回した・ほかの画面から戻ったときは、進み具合の表示を引き継ぐ
+        AppUpdater.attach(this)
     }
 
     override fun onStop() {

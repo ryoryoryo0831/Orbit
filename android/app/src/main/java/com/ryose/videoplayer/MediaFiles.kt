@@ -216,6 +216,8 @@ object MediaFiles {
             MediaStore.Audio.Media.DURATION,
         )
         val result = mutableListOf<Song>()
+        TagCache.load(context)
+        val seen = HashSet<String>()
         try {
             context.contentResolver.query(
                 collection, projection, "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, null,
@@ -230,6 +232,7 @@ object MediaFiles {
                 val durCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 while (c.moveToNext()) {
                     val path = c.getString(dataCol)
+                    path?.let { seen += it }
                     // タグが Shift_JIS のままの曲は、文字化けしているので読み直す
                     val tags = TagText.fixTags(path, c.getString(titleCol), c.getString(artistCol), c.getString(albumCol))
                     val title = tags.title?.takeIf { it.isNotBlank() }
@@ -248,7 +251,10 @@ object MediaFiles {
                     )
                 }
             }
-        } catch (_: Exception) {
+            // 読み終えたときだけ、消えた曲のタグを忘れる（途中で失敗したときに全部忘れないように）
+            TagCache.save(context, seen)
+        } catch (e: Exception) {
+            PlaybackLog.add("曲の一覧を読めなかった：${e.javaClass.simpleName}: ${e.message}")
         }
         return result
     }

@@ -34,6 +34,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -126,7 +127,13 @@ class PlaybackService : Service() {
 
     private val binder = LocalBinder()
     private val handler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // 再生の準備の途中で思わぬ例外が出ても、アプリごと落とさずに「再生できない」にして、記録に残す
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main + CoroutineExceptionHandler { _, e ->
+            PlaybackLog.add("再生の準備で思わぬエラー：${e.javaClass.simpleName}: ${e.message}（${e.stackTrace.firstOrNull()}）")
+            if (currentItem != null) onPlaybackError(REASON_UNREADABLE)
+        }
+    )
     private val listeners = mutableListOf<Listener>()
 
     lateinit var libVLC: LibVLC
@@ -604,7 +611,7 @@ class PlaybackService : Service() {
     fun replayAfterEngineChange() {
         val (t, playing) = pendingReplay ?: return
         pendingReplay = null
-        playCurrent(t, paused = !playing)
+        reopenCurrent(t, paused = !playing, "設定が変わったので")
     }
 
     /** VLC からの質問（ログイン・証明書の確認など）を表示する画面を登録する */
@@ -708,6 +715,29 @@ class PlaybackService : Service() {
      * ファイルを開く・ログイン情報を読むなどの時間がかかる準備は裏で行い、終わってから VLC に渡す
      * （準備中のシーク・一時停止は [preparingStart]・[preparingPaused] に反映される）
      */
+    /**
+     * 同じ曲・動画を同じ位置から開き直す（設定の反映・映像を出し直す・キャスト・デコードの切り替え・字幕の文字コード）。
+     * 開き直しはここだけを通す。DVD（ISO）は、見ていたタイトル（話）の続きから始める
+     * （1.0.160 までは、ここを通らずに開き直していたので、DVD のメニューや本編の頭・別の話の途中に戻っていた）
+     */
+    private fun reopenCurrent(startMs: Long, paused: Boolean, why: String) {
+        val item = currentItem ?: return
+        if (item.isDiscImage) {
+            if (preparing) {
+                // 準備中に開き直す：今の準備が「続きのタイトルから」なら、それを引き継ぐ
+                if (resumeDiscGen == playGeneration) resumeDiscOnce = true
+            } else if (!isInDiscMenu()) {
+                val title = currentTitle()
+                if (title > 0) {
+                    resume.saveTitle(item.key, title)
+                    resumeDiscOnce = true
+                }
+            }
+        }
+        PlaybackLog.add("開き直す（$why）：${PlaybackLog.time(startMs)}" + if (resumeDiscOnce) "・見ていたタイトルの続きから" else "")
+        playCurrent(startMs, paused)
+    }
+
     private fun playCurrent(startMs: Long, paused: Boolean) {
         val item = currentItem ?: return
         val gen = ++playGeneration
@@ -764,6 +794,8 @@ class PlaybackService : Service() {
                 else -> Source.Fd(contentResolver.openFileDescriptor(item.uri, "r") ?: throw FileNotFoundException())
             }
         } catch (e: Exception) {
+            // 理由の手がかりを残す（画面に出すのは短い理由だけなので）
+            PlaybackLog.add("開けなかった：${item.title}（${e.javaClass.simpleName}: ${e.message}）")
             Source.Failed(openErrorReason(item, e))
         }
     }
@@ -791,7 +823,8 @@ class PlaybackService : Service() {
                     return
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            PlaybackLog.add("VLC に渡せなかった：${item.title}（${e.javaClass.simpleName}: ${e.message}）")
             onPlaybackError(REASON_UNREADABLE)
             updateSession()
             return
@@ -862,8 +895,11 @@ class PlaybackService : Service() {
     private fun openErrorReason(item: PlaylistItem, e: Exception?): String {
         val path = item.path
         return when {
-            item.isNetwork -> REASON_NETWORK
+            // ネットワークのものがここで失敗するのは、つなぐ前（ログイン情報を読むところ）なので、接続の問題ではない
+            item.isNetwork -> REASON_UNREADABLE
             path != null && !File(path).exists() -> REASON_MISSING
+            // ほかのアプリから開いたもの（履歴など）は、渡されたときの読む許可が切れている
+            e is SecurityException -> REASON_NO_PERMISSION
             path != null -> REASON_UNREADABLE
             e is FileNotFoundException -> REASON_MISSING
             else -> REASON_UNREADABLE
@@ -969,7 +1005,7 @@ class PlaybackService : Service() {
         if (startedWithoutVideo) {
             // 映像なしで開いた動画は、同じ位置から開き直して映像を出す
             val t = player.time.coerceAtLeast(0)
-            playCurrent(t, paused = !player.isPlaying)
+            reopenCurrent(t, paused = !player.isPlaying, "映像なしで開いた動画に映像を出す")
             return
         }
         if (!videoTrackDisabled) return
@@ -1205,7 +1241,7 @@ class PlaybackService : Service() {
         renderer = item?.also { it.retain() }
         player.setRenderer(item)
         if (active) {
-            playCurrent(position, false)
+            reopenCurrent(position, false, if (item == null) "キャストをやめた" else "キャストを始めた")
         }
         dispatch { it.onModesChanged() }
     }
@@ -1225,7 +1261,7 @@ class PlaybackService : Service() {
         hwOverrides[item.key] = hw
         val t = reloadPosition()
         val wasPlaying = isPlaying
-        playCurrent(t, paused = !wasPlaying)
+        reopenCurrent(t, paused = !wasPlaying, if (hw) "ハードウェアデコードにした" else "ソフトウェアデコードにした")
         return hw
     }
 
@@ -1546,7 +1582,7 @@ class PlaybackService : Service() {
     fun setSubtitleCharset(name: String?) {
         val item = currentItem ?: return
         if (name == null) subtitleCharsets.remove(item.key) else subtitleCharsets[item.key] = name
-        playCurrent(reloadPosition(), paused = !isPlaying)
+        reopenCurrent(reloadPosition(), paused = !isPlaying, "字幕の文字コードを選び直した")
     }
 
     /** 字幕を VLC に渡す（[gen] は開いたときの番号。同じ動画を開き直した場合も、古い分は渡さない） */
@@ -1881,6 +1917,8 @@ class PlaybackService : Service() {
         private const val REASON_MISSING = "ファイルが見つかりません。移動・削除されたか、SD カードが外されている可能性があります"
         private const val REASON_UNREADABLE = "ファイルを読み込めませんでした。読み込みが許可されていない可能性があります"
         private const val REASON_NETWORK = "サーバーに接続できませんでした。ネットワークの状態や、NAS・サーバーが動いているか確認してください"
+        private const val REASON_NO_PERMISSION =
+            "読む許可が切れています。ほかのアプリから開いた動画は、元のアプリからもう一度開いてください"
         private const val REASON_FORMAT = "この形式は再生できない可能性があります"
         private const val CHANNEL_ID = "playback"
         private const val NOTIFICATION_ID = 1

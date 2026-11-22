@@ -65,7 +65,14 @@ class HistoryFragment : BaseListFragment() {
     /** 履歴はその動画だけを再生する */
     override fun onRowClick(position: Int) {
         val row = adapter.rows.getOrNull(position) as? Row.Media ?: return
-        requireActivity().playItems(listOf(row.item), 0)
+        // ほかのアプリから開いた content:// の記録は、ファイルの場所が分かれば記録ごと置き換える
+        // （許可が切れても開けるように。同じ動画が content:// とファイルの 2 件に分かれないように）
+        val item = requireContext().withLocalPath(row.item)
+        if (item !== row.item) {
+            HistoryStore(requireContext()).replace(row.item.key, item)
+            FileRecords.move(requireContext(), row.item.key, item.key)
+        }
+        requireActivity().playItems(listOf(item), 0)
     }
 
     override fun extraActions(row: Row): List<SheetItem> {
