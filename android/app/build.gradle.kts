@@ -28,7 +28,8 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = buildNumber
-        versionName = "1.0.$buildNumber"
+        // PC で作った版は「1.0.N-pc」（pc-build.ps1 が付ける）。GitHub の版と見分けるため
+        versionName = "1.0.$buildNumber" + (System.getenv("ORBIT_VERSION_SUFFIX") ?: "")
     }
 
     // libVLC はCPUごとの部品が大きいので、CPUの種類ごとにAPKを分ける
